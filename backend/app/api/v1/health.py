@@ -1,12 +1,15 @@
-from fastapi import APIRouter
+﻿from fastapi import APIRouter
 
 from app.core.config import settings
 
 router = APIRouter()
 
 
-@router.get("/health", status_code=200)
-def health_check():
+@router.get("", response_model=dict[str, str])
+def health_check() -> dict[str, str]:
+    """
+    System health check endpoint.
+    """
     return {
         "status": "healthy",
         "project": settings.PROJECT_NAME,
