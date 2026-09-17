@@ -1,4 +1,4 @@
-from pydantic import AnyHttpUrl, field_validator
+﻿from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
     DEBUG: bool = False
+
+    DATABASE_URL: str = "postgresql://kodraq_user:kodraq_secure_password@localhost:5432/kodraq_db"
 
     # Configurable CORS origins for development and production
     BACKEND_CORS_ORIGINS: list[str | AnyHttpUrl] = [
