@@ -3,6 +3,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import RootLayout from "./layouts/RootLayout";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
+import MyLearning from "./pages/MyLearning";
 import NotFound from "./pages/NotFound";
 import TrackDetail from "./pages/TrackDetail";
 import Tracks from "./pages/Tracks";
@@ -18,6 +19,7 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="tracks" element={<Tracks />} />
             <Route path="tracks/:trackId" element={<TrackDetail />} />
+            <Route path="my-learning" element={<MyLearning />} />
           </Route>
         </Route>
 

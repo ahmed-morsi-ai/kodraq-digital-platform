@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { isAxiosError } from "axios";
 import {
   ArrowLeft,
@@ -21,7 +21,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import EnrollmentPanel from "@/components/EnrollmentPanel";
+import { enrollmentService } from "@/services/enrollment.service";
 import { trackService } from "@/services/track.service";
+import type { Enrollment } from "@/types/enrollment";
 import type { TrackCurriculum } from "@/types/track";
 
 function getErrorMessage(error: unknown) {
@@ -53,17 +56,28 @@ export default function TrackDetail() {
   const navigate = useNavigate();
 
   const [track, setTrack] = useState<TrackCurriculum | null>(null);
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isEnrollmentLoading, setIsEnrollmentLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const numericTrackId = Number(trackId);
   const isValidTrackId =
     Number.isInteger(numericTrackId) && numericTrackId > 0;
 
+  const currentEnrollment = useMemo(
+    () =>
+      enrollments.find(
+        (enrollment) => enrollment.track_id === numericTrackId,
+      ),
+    [enrollments, numericTrackId],
+  );
+
   const loadCurriculum = useCallback(async () => {
     if (!isValidTrackId) {
       setError("The requested track ID is invalid.");
       setIsLoading(false);
+      setIsEnrollmentLoading(false);
       return;
     }
 
@@ -84,9 +98,37 @@ export default function TrackDetail() {
     }
   }, [isValidTrackId, numericTrackId]);
 
+  const loadEnrollment = useCallback(async () => {
+    if (!isValidTrackId) {
+      return;
+    }
+
+    setIsEnrollmentLoading(true);
+
+    try {
+      const data = await enrollmentService.getMyEnrollments();
+      setEnrollments(data);
+    } catch (requestError) {
+      console.error("Failed to load enrollment status", requestError);
+      setEnrollments([]);
+    } finally {
+      setIsEnrollmentLoading(false);
+    }
+  }, [isValidTrackId]);
+
   useEffect(() => {
     void loadCurriculum();
-  }, [loadCurriculum]);
+    void loadEnrollment();
+  }, [loadCurriculum, loadEnrollment]);
+
+  const handleEnrollmentCreated = (enrollment: Enrollment) => {
+    setEnrollments((current) => [
+      ...current.filter(
+        (item) => item.track_id !== enrollment.track_id,
+      ),
+      enrollment,
+    ]);
+  };
 
   if (isLoading) {
     return (
@@ -200,7 +242,8 @@ export default function TrackDetail() {
                   <FileText className="h-5 w-5 text-emerald-600" />
                   <p className="mt-3 text-2xl font-bold text-slate-900">
                     {track.modules.reduce(
-                      (total, module) => total + module.resources.length,
+                      (total, module) =>
+                        total + module.resources.length,
                       0,
                     )}
                   </p>
@@ -212,6 +255,14 @@ export default function TrackDetail() {
             </div>
           </div>
         </section>
+
+        {!isEnrollmentLoading && (
+          <EnrollmentPanel
+            trackId={numericTrackId}
+            enrollment={currentEnrollment}
+            onEnrollmentCreated={handleEnrollmentCreated}
+          />
+        )}
 
         <section className="space-y-5">
           <div>
@@ -253,7 +304,8 @@ export default function TrackDetail() {
                       </CardTitle>
 
                       <CardDescription className="mt-2 max-w-3xl leading-6">
-                        {module.description || "Module description unavailable."}
+                        {module.description ||
+                          "Module description unavailable."}
                       </CardDescription>
                     </div>
                   </div>
@@ -293,7 +345,8 @@ export default function TrackDetail() {
                                     </h4>
 
                                     <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-600">
-                                      {lesson.content || "No lesson content available."}
+                                      {lesson.content ||
+                                        "No lesson content available."}
                                     </p>
                                   </div>
 
