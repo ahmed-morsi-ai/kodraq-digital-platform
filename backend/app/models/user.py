@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
+    from app.models.enrollment import Enrollment
     from app.models.role import Role
 
 
@@ -36,6 +37,12 @@ class User(Base, TimestampMixin):
     )
     role_rel: Mapped[Role | None] = relationship(
         "Role", back_populates="users"
+    )
+
+    enrollments: Mapped[list[Enrollment]] = relationship(
+        "Enrollment",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
