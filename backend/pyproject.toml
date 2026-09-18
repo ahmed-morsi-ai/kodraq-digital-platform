@@ -1,4 +1,4 @@
-﻿[tool.ruff]
+[tool.ruff]
 target-version = "py312"
 line-length = 88
 exclude = [
@@ -30,3 +30,4 @@ testpaths = [
     "tests",
 ]
 python_files = ["test_*.py"]
+
