@@ -4,6 +4,7 @@ import RootLayout from "./layouts/RootLayout";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import TrackDetail from "./pages/TrackDetail";
 import Tracks from "./pages/Tracks";
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
           <Route path="/" element={<RootLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="tracks" element={<Tracks />} />
+            <Route path="tracks/:trackId" element={<TrackDetail />} />
           </Route>
         </Route>
 
