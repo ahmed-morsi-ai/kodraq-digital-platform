@@ -3,7 +3,9 @@ import { isAxiosError } from "axios";
 import {
   ArrowLeft,
   BookOpen,
+  Check,
   CheckCircle2,
+  Circle,
   ExternalLink,
   FileText,
   Layers3,
@@ -25,6 +27,10 @@ import EnrollmentPanel from "@/components/EnrollmentPanel";
 import { enrollmentService } from "@/services/enrollment.service";
 import { trackService } from "@/services/track.service";
 import type { Enrollment } from "@/types/enrollment";
+import type {
+  LessonProgress,
+  ProgressStatus,
+} from "@/types/progress";
 import type { TrackCurriculum } from "@/types/track";
 
 function getErrorMessage(error: unknown) {
@@ -51,15 +57,31 @@ function getErrorMessage(error: unknown) {
   return "Unable to load this curriculum right now. Please try again.";
 }
 
+function getProgressLabel(status?: ProgressStatus) {
+  switch (status) {
+    case "in_progress":
+      return "In progress";
+    case "completed":
+      return "Completed";
+    default:
+      return "Not started";
+  }
+}
+
 export default function TrackDetail() {
   const { trackId } = useParams<{ trackId: string }>();
   const navigate = useNavigate();
 
   const [track, setTrack] = useState<TrackCurriculum | null>(null);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [progress, setProgress] = useState<LessonProgress[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEnrollmentLoading, setIsEnrollmentLoading] = useState(true);
+  const [isProgressLoading, setIsProgressLoading] = useState(false);
+  const [progressActionLessonId, setProgressActionLessonId] =
+    useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progressError, setProgressError] = useState<string | null>(null);
 
   const numericTrackId = Number(trackId);
   const isValidTrackId =
@@ -71,6 +93,36 @@ export default function TrackDetail() {
         (enrollment) => enrollment.track_id === numericTrackId,
       ),
     [enrollments, numericTrackId],
+  );
+
+  const totalLessons = useMemo(
+    () =>
+      track?.modules.reduce(
+        (total, module) => total + module.lessons.length,
+        0,
+      ) ?? 0,
+    [track],
+  );
+
+  const completedLessons = useMemo(
+    () =>
+      progress.filter(
+        (item) => item.status === "completed",
+      ).length,
+    [progress],
+  );
+
+  const overallProgress =
+    totalLessons > 0
+      ? Math.round((completedLessons / totalLessons) * 100)
+      : 0;
+
+  const progressByLesson = useMemo(
+    () =>
+      new Map(
+        progress.map((item) => [item.lesson_id, item]),
+      ),
+    [progress],
   );
 
   const loadCurriculum = useCallback(async () => {
@@ -116,10 +168,40 @@ export default function TrackDetail() {
     }
   }, [isValidTrackId]);
 
+  const loadProgress = useCallback(async (enrollmentId: number) => {
+    setIsProgressLoading(true);
+    setProgressError(null);
+
+    try {
+      const data = await enrollmentService.getProgress(enrollmentId);
+      setProgress(data);
+    } catch (requestError) {
+      console.error("Failed to load lesson progress", requestError);
+      setProgress([]);
+      setProgressError(
+        "Unable to load lesson progress. Please try again.",
+      );
+    } finally {
+      setIsProgressLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void loadCurriculum();
     void loadEnrollment();
   }, [loadCurriculum, loadEnrollment]);
+
+  useEffect(() => {
+    if (
+      currentEnrollment &&
+      currentEnrollment.status !== "cancelled"
+    ) {
+      void loadProgress(currentEnrollment.id);
+    } else {
+      setProgress([]);
+      setProgressError(null);
+    }
+  }, [currentEnrollment, loadProgress]);
 
   const handleEnrollmentCreated = (enrollment: Enrollment) => {
     setEnrollments((current) => [
@@ -128,6 +210,65 @@ export default function TrackDetail() {
       ),
       enrollment,
     ]);
+  };
+
+  const handleProgressAction = async (lessonId: number) => {
+    if (!currentEnrollment) {
+      return;
+    }
+
+    const existing = progressByLesson.get(lessonId);
+
+    setProgressActionLessonId(lessonId);
+    setProgressError(null);
+
+    try {
+      if (!existing) {
+        const created = await enrollmentService.createProgress(
+          currentEnrollment.id,
+          {
+            lesson_id: lessonId,
+            status: "in_progress",
+            progress_percentage: 0,
+          },
+        );
+
+        setProgress((current) => [...current, created]);
+        return;
+      }
+
+      const nextStatus: ProgressStatus =
+        existing.status === "completed"
+          ? "in_progress"
+          : "completed";
+
+      const nextPercentage =
+        nextStatus === "completed"
+          ? 100
+          : 0;
+
+      const updated = await enrollmentService.updateProgress(
+        currentEnrollment.id,
+        existing.id,
+        {
+          status: nextStatus,
+          progress_percentage: nextPercentage,
+        },
+      );
+
+      setProgress((current) =>
+        current.map((item) =>
+          item.id === updated.id ? updated : item,
+        ),
+      );
+    } catch (requestError) {
+      console.error("Failed to update lesson progress", requestError);
+      setProgressError(
+        "Unable to update this lesson progress. Please try again.",
+      );
+    } finally {
+      setProgressActionLessonId(null);
+    }
   };
 
   if (isLoading) {
@@ -264,6 +405,65 @@ export default function TrackDetail() {
           />
         )}
 
+        {!isEnrollmentLoading &&
+          currentEnrollment &&
+          currentEnrollment.status !== "cancelled" && (
+            <Card className="border-blue-200 shadow-sm">
+              <CardContent className="p-5 md:p-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">
+                      Overall progress
+                    </p>
+
+                    <p className="mt-1 text-2xl font-bold text-slate-900">
+                      {overallProgress}%
+                    </p>
+                  </div>
+
+                  <div className="sm:min-w-[280px]">
+                    <div className="mb-2 flex items-center justify-between text-xs text-gray-500">
+                      <span>
+                        {completedLessons} of {totalLessons} lessons completed
+                      </span>
+                      {isProgressLoading && (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      )}
+                    </div>
+
+                    <div
+                      className="h-2.5 overflow-hidden rounded-full bg-gray-100"
+                      aria-label={`Overall progress ${overallProgress}%`}
+                    >
+                      <div
+                        className="h-full rounded-full bg-blue-600 transition-all duration-300"
+                        style={{ width: `${overallProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {progressError && (
+                  <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    <span>{progressError}</span>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() =>
+                        void loadProgress(currentEnrollment.id)
+                      }
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
         <section className="space-y-5">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-slate-900">
@@ -327,46 +527,162 @@ export default function TrackDetail() {
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {module.lessons.map((lesson, lessonIndex) => (
-                          <div
-                            key={lesson.id}
-                            className="rounded-xl border border-gray-200 bg-white p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/30"
-                          >
-                            <div className="flex gap-3">
-                              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-semibold text-slate-600">
-                                {lessonIndex + 1}
-                              </div>
+                        {module.lessons.map((lesson, lessonIndex) => {
+                          const lessonProgress =
+                            progressByLesson.get(lesson.id);
 
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                  <div>
-                                    <h4 className="font-semibold text-slate-900">
-                                      {lesson.title}
-                                    </h4>
+                          const status =
+                            lessonProgress?.status ?? "not_started";
 
-                                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-600">
-                                      {lesson.content ||
-                                        "No lesson content available."}
-                                    </p>
-                                  </div>
+                          const isActionLoading =
+                            progressActionLessonId === lesson.id;
 
-                                  {lesson.video_url && (
-                                    <a
-                                      href={lesson.video_url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
-                                    >
-                                      <PlayCircle className="h-4 w-4" />
-                                      Video
-                                      <ExternalLink className="h-3.5 w-3.5" />
-                                    </a>
+                          return (
+                            <div
+                              key={lesson.id}
+                              className={`rounded-xl border p-4 transition-colors ${
+                                status === "completed"
+                                  ? "border-emerald-200 bg-emerald-50/30"
+                                  : status === "in_progress"
+                                    ? "border-amber-200 bg-amber-50/30"
+                                    : "border-gray-200 bg-white"
+                              }`}
+                            >
+                              <div className="flex gap-3">
+                                <div
+                                  className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                                    status === "completed"
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : status === "in_progress"
+                                        ? "bg-amber-100 text-amber-700"
+                                        : "bg-slate-100 text-slate-600"
+                                  }`}
+                                >
+                                  {status === "completed" ? (
+                                    <Check className="h-4 w-4" />
+                                  ) : (
+                                    lessonIndex + 1
                                   )}
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                    <div>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <h4 className="font-semibold text-slate-900">
+                                          {lesson.title}
+                                        </h4>
+
+                                        <span
+                                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                            status === "completed"
+                                              ? "bg-emerald-100 text-emerald-700"
+                                              : status === "in_progress"
+                                                ? "bg-amber-100 text-amber-700"
+                                                : "bg-slate-100 text-slate-600"
+                                          }`}
+                                        >
+                                          {getProgressLabel(status)}
+                                        </span>
+                                      </div>
+
+                                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-600">
+                                        {lesson.content ||
+                                          "No lesson content available."}
+                                      </p>
+
+                                      {lessonProgress && (
+                                        <div className="mt-3 max-w-md">
+                                          <div className="mb-1 flex justify-between text-xs text-gray-400">
+                                            <span>Lesson progress</span>
+                                            <span>
+                                              {lessonProgress.progress_percentage}%
+                                            </span>
+                                          </div>
+
+                                          <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
+                                            <div
+                                              className={`h-full rounded-full transition-all ${
+                                                status === "completed"
+                                                  ? "bg-emerald-600"
+                                                  : "bg-blue-600"
+                                              }`}
+                                              style={{
+                                                width: `${lessonProgress.progress_percentage}%`,
+                                              }}
+                                            />
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                      {lesson.video_url && (
+                                        <a
+                                          href={lesson.video_url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
+                                        >
+                                          <PlayCircle className="h-4 w-4" />
+                                          Video
+                                          <ExternalLink className="h-3.5 w-3.5" />
+                                        </a>
+                                      )}
+
+                                      {currentEnrollment && (
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant={
+                                            status === "completed"
+                                              ? "outline"
+                                              : "default"
+                                          }
+                                          disabled={isActionLoading}
+                                          onClick={() =>
+                                            void handleProgressAction(
+                                              lesson.id,
+                                            )
+                                          }
+                                          className={
+                                            status === "completed"
+                                              ? "border-amber-200 text-amber-700 hover:bg-amber-50"
+                                              : status === "in_progress"
+                                                ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                                                : "bg-blue-600 text-white hover:bg-blue-700"
+                                          }
+                                        >
+                                          {isActionLoading ? (
+                                            <>
+                                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                              Saving...
+                                            </>
+                                          ) : status === "completed" ? (
+                                            <>
+                                              <Circle className="mr-2 h-4 w-4" />
+                                              Reopen
+                                            </>
+                                          ) : status === "in_progress" ? (
+                                            <>
+                                              <CheckCircle2 className="mr-2 h-4 w-4" />
+                                              Complete
+                                            </>
+                                          ) : (
+                                            <>
+                                              <PlayCircle className="mr-2 h-4 w-4" />
+                                              Start lesson
+                                            </>
+                                          )}
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
