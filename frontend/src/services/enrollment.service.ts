@@ -1,14 +1,15 @@
-﻿import type {
+﻿import { api } from "./api";
+import type {
   Enrollment,
   EnrollmentCreate,
   EnrollmentDetail,
   EnrollmentUpdate,
-  StudentProgress,
-  StudentProgressCreate,
-  StudentProgressDetail,
-  StudentProgressUpdate,
 } from "@/types/enrollment";
-import { api } from "./api";
+import type {
+  LessonProgress,
+  ProgressCreatePayload,
+  ProgressUpdatePayload,
+} from "@/types/progress";
 
 export const enrollmentService = {
   async enroll(payload: EnrollmentCreate): Promise<Enrollment> {
@@ -25,7 +26,6 @@ export const enrollmentService = {
     const response = await api.get<EnrollmentDetail>(
       `/enrollments/${enrollmentId}`,
     );
-
     return response.data;
   },
 
@@ -33,7 +33,6 @@ export const enrollmentService = {
     const response = await api.get<Enrollment[]>(
       `/enrollments/track/${trackId}`,
     );
-
     return response.data;
   },
 
@@ -45,42 +44,36 @@ export const enrollmentService = {
       `/enrollments/${enrollmentId}`,
       payload,
     );
-
     return response.data;
   },
 
-  async getProgress(
-    enrollmentId: number,
-  ): Promise<StudentProgressDetail[]> {
-    const response = await api.get<StudentProgressDetail[]>(
+  async getProgress(enrollmentId: number): Promise<LessonProgress[]> {
+    const response = await api.get<LessonProgress[]>(
       `/enrollments/${enrollmentId}/progress`,
     );
-
     return response.data;
   },
 
   async createProgress(
     enrollmentId: number,
-    payload: StudentProgressCreate,
-  ): Promise<StudentProgress> {
-    const response = await api.post<StudentProgress>(
+    payload: ProgressCreatePayload,
+  ): Promise<LessonProgress> {
+    const response = await api.post<LessonProgress>(
       `/enrollments/${enrollmentId}/progress`,
       payload,
     );
-
     return response.data;
   },
 
   async updateProgress(
     enrollmentId: number,
     progressId: number,
-    payload: StudentProgressUpdate,
-  ): Promise<StudentProgress> {
-    const response = await api.patch<StudentProgress>(
+    payload: ProgressUpdatePayload,
+  ): Promise<LessonProgress> {
+    const response = await api.patch<LessonProgress>(
       `/enrollments/${enrollmentId}/progress/${progressId}`,
       payload,
     );
-
     return response.data;
   },
 };
