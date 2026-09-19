@@ -2,6 +2,7 @@
 import ProtectedRoute from "./components/ProtectedRoute";
 import RootLayout from "./layouts/RootLayout";
 import Dashboard from "./pages/Dashboard";
+import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import MyLearning from "./pages/MyLearning";
 import NotFound from "./pages/NotFound";
@@ -12,14 +13,15 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
 
         <Route element={<ProtectedRoute />}>
-          <Route path="/" element={<RootLayout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="tracks" element={<Tracks />} />
-            <Route path="tracks/:trackId" element={<TrackDetail />} />
-            <Route path="my-learning" element={<MyLearning />} />
+          <Route element={<RootLayout />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/tracks" element={<Tracks />} />
+            <Route path="/tracks/:trackId" element={<TrackDetail />} />
+            <Route path="/my-learning" element={<MyLearning />} />
           </Route>
         </Route>
 
