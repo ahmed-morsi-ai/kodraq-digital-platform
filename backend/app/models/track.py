@@ -27,6 +27,11 @@ class Track(Base, TimestampMixin):
     assignments = relationship("Assignment", back_populates="track")
     questions = relationship("Question", back_populates="track")
     quizzes = relationship("Quiz", back_populates="track")
+    training_projects = relationship(
+        "TrainingProject",
+        back_populates="track",
+        cascade="all, delete-orphan",
+    )
 
 
 class TrackModule(Base, TimestampMixin):
