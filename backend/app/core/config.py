@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://kodraq_user:kodraq_secure_password@localhost:5432/kodraq_db"
     SECRET_KEY: str = "super-secret-key-change-in-production-1234567890"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
+    OPENAI_API_KEY: str | None = None
+    AI_DEFAULT_PROVIDER: str = "openai"
+    AI_DEFAULT_MODEL: str = "gpt-4o-mini"
+    AI_TIMEOUT_SECONDS: float = 30.0
+    AI_MAX_RETRIES: int = 2
 
     # Configurable CORS origins for development and production
     BACKEND_CORS_ORIGINS: list[str | AnyHttpUrl] = [

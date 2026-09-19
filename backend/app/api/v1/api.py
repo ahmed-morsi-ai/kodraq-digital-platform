@@ -1,6 +1,7 @@
 ﻿from fastapi import APIRouter
 
 from app.api.v1 import (
+    ai,
     assignments,
     enrollments,
     final_projects,
@@ -48,6 +49,12 @@ api_router.include_router(
     assignments.router,
     prefix="/assignments",
     tags=["assignments"],
+)
+
+api_router.include_router(
+    ai.router,
+    prefix="/ai",
+    tags=["ai"],
 )
 
 api_router.include_router(

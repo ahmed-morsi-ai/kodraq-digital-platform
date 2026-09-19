@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
+    from app.models.ai import AIRequestLog
     from app.models.enrollment import Enrollment
     from app.models.graduation import GraduationEvaluation
     from app.models.project_submission import ProjectReview, ProjectSubmission
@@ -70,6 +71,11 @@ class User(Base, TimestampMixin):
     )
     graduation_evaluations: Mapped[list[GraduationEvaluation]] = relationship(
         "GraduationEvaluation",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    ai_request_logs: Mapped[list[AIRequestLog]] = relationship(
+        "AIRequestLog",
         back_populates="user",
         cascade="all, delete-orphan",
     )

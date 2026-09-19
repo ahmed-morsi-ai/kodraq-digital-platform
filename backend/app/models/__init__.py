@@ -1,4 +1,5 @@
-﻿from app.models.assignment import Assignment
+﻿from app.models.ai import AIRequestLog
+from app.models.assignment import Assignment
 from app.models.base import Base
 from app.models.enrollment import Enrollment, StudentProgress
 from app.models.final_project import ProjectRequirement, TrainingProject
@@ -22,6 +23,7 @@ from app.models.user import User
 __all__ = [
     "Base",
     "Assignment",
+    "AIRequestLog",
     "Role",
     "User",
     "Track",
