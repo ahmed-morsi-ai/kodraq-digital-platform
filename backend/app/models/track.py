@@ -37,6 +37,17 @@ class Track(Base, TimestampMixin):
         back_populates="track",
         cascade="all, delete-orphan",
     )
+    knowledge_documents = relationship(
+        "KnowledgeDocument",
+        back_populates="track",
+        cascade="all, delete-orphan",
+    )
+    knowledge_chunks = relationship(
+        "KnowledgeChunk",
+        back_populates="track",
+        cascade="all, delete-orphan",
+        overlaps="document,chunks",
+    )
 
 
 class TrackModule(Base, TimestampMixin):

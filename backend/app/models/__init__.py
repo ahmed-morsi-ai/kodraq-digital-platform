@@ -8,6 +8,7 @@ from app.models.graduation import (
     GraduationEvaluationStatus,
     GraduationGateCheck,
 )
+from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
 from app.models.project_submission import (
     ProjectReview,
     ProjectSubmission,
@@ -49,4 +50,6 @@ __all__ = [
     "GraduationEvaluation",
     "GraduationGateCheck",
     "GraduationEvaluationStatus",
+    "KnowledgeDocument",
+    "KnowledgeChunk",
 ]
