@@ -32,6 +32,11 @@ class Track(Base, TimestampMixin):
         back_populates="track",
         cascade="all, delete-orphan",
     )
+    graduation_evaluations = relationship(
+        "GraduationEvaluation",
+        back_populates="track",
+        cascade="all, delete-orphan",
+    )
 
 
 class TrackModule(Base, TimestampMixin):

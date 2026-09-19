@@ -16,6 +16,13 @@ from app.crud.crud_enrollment import (
     enrollment,
     student_progress,
 )
+from app.crud.crud_graduation import (
+    CRUDGraduationEvaluation,
+    evaluate_graduation,
+    get_graduation_evaluation,
+    get_latest_graduation_evaluation,
+    graduation_evaluation,
+)
 from app.crud.crud_project_submission import (
     CRUDProjectSubmission,
     create_project_submission,
@@ -82,6 +89,7 @@ __all__ = [
     "CRUDResource",
     "CRUDEnrollment",
     "CRUDStudentProgress",
+    "CRUDGraduationEvaluation",
     "CRUDSubmission",
     "track",
     "track_module",
@@ -89,6 +97,10 @@ __all__ = [
     "resource",
     "enrollment",
     "student_progress",
+    "graduation_evaluation",
+    "evaluate_graduation",
+    "get_graduation_evaluation",
+    "get_latest_graduation_evaluation",
     "assignment",
     "create_assignment",
     "get_assignment",

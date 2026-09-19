@@ -2,6 +2,11 @@
 from app.models.base import Base
 from app.models.enrollment import Enrollment, StudentProgress
 from app.models.final_project import ProjectRequirement, TrainingProject
+from app.models.graduation import (
+    GraduationEvaluation,
+    GraduationEvaluationStatus,
+    GraduationGateCheck,
+)
 from app.models.project_submission import (
     ProjectReview,
     ProjectSubmission,
@@ -39,4 +44,7 @@ __all__ = [
     "ProjectSubmission",
     "ProjectReview",
     "ProjectSubmissionStatus",
+    "GraduationEvaluation",
+    "GraduationGateCheck",
+    "GraduationEvaluationStatus",
 ]

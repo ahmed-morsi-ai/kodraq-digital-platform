@@ -16,6 +16,10 @@ from app.schemas.enrollment import (
     StudentProgressDetail,
     StudentProgressUpdate,
 )
+from app.schemas.graduation import (
+    GraduationEvaluationResponse,
+    GraduationGateCheckResponse,
+)
 from app.schemas.project_submission import (
     ProjectReviewCreate,
     ProjectReviewResponse,
@@ -130,4 +134,6 @@ __all__ = [
     "StudentProgressCreate",
     "StudentProgressUpdate",
     "StudentProgressDetail",
+    "GraduationGateCheckResponse",
+    "GraduationEvaluationResponse",
 ]

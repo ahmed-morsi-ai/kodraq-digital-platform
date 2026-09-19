@@ -4,6 +4,7 @@ from app.api.v1 import (
     assignments,
     enrollments,
     final_projects,
+    graduation,
     health,
     login,
     quizzes,
@@ -77,4 +78,10 @@ api_router.include_router(
     final_projects.router,
     prefix="/final-projects",
     tags=["final-projects"],
+)
+
+api_router.include_router(
+    graduation.router,
+    prefix="/graduation",
+    tags=["graduation"],
 )
