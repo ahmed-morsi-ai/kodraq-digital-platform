@@ -16,6 +16,14 @@ from app.schemas.enrollment import (
     StudentProgressDetail,
     StudentProgressUpdate,
 )
+from app.schemas.project_submission import (
+    ProjectReviewCreate,
+    ProjectReviewResponse,
+    ProjectSubmissionBase,
+    ProjectSubmissionCreate,
+    ProjectSubmissionResponse,
+    ProjectSubmissionUpdate,
+)
 from app.schemas.quiz import (
     QuestionBase,
     QuestionCreate,
@@ -89,6 +97,12 @@ __all__ = [
     "QuizAnswerResponse",
     "QuizAttemptSubmit",
     "QuizAttemptResponse",
+    "ProjectSubmissionBase",
+    "ProjectSubmissionCreate",
+    "ProjectSubmissionUpdate",
+    "ProjectReviewCreate",
+    "ProjectReviewResponse",
+    "ProjectSubmissionResponse",
     "Role",
     "RoleCreate",
     "RoleUpdate",

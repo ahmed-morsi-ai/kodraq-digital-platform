@@ -3,6 +3,7 @@
 from app.api.v1 import (
     assignments,
     enrollments,
+    final_projects,
     health,
     login,
     quizzes,
@@ -70,4 +71,10 @@ api_router.include_router(
     quizzes.attempt_router,
     prefix="/quiz-attempts",
     tags=["quiz-attempts"],
+)
+
+api_router.include_router(
+    final_projects.router,
+    prefix="/final-projects",
+    tags=["final-projects"],
 )

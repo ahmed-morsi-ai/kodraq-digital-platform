@@ -34,6 +34,11 @@ class TrainingProject(Base, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="ProjectRequirement.ordering",
     )
+    submissions = relationship(
+        "ProjectSubmission",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
 
 
 class ProjectRequirement(Base):

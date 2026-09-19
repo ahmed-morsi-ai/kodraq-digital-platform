@@ -16,6 +16,16 @@ from app.crud.crud_enrollment import (
     enrollment,
     student_progress,
 )
+from app.crud.crud_project_submission import (
+    CRUDProjectSubmission,
+    create_project_submission,
+    get_project_submission,
+    get_project_submissions_by_project,
+    get_project_submissions_by_user,
+    project_submission,
+    review_project_submission,
+    update_project_submission,
+)
 from app.crud.crud_quiz import (
     CRUDQuestion,
     CRUDQuiz,
@@ -112,6 +122,14 @@ __all__ = [
     "get_quiz_attempt",
     "get_quiz_attempts_by_quiz",
     "submit_quiz_attempt",
+    "CRUDProjectSubmission",
+    "project_submission",
+    "create_project_submission",
+    "get_project_submission",
+    "get_project_submissions_by_project",
+    "get_project_submissions_by_user",
+    "update_project_submission",
+    "review_project_submission",
     "role",
     "user",
 ]

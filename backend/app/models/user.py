@@ -9,6 +9,7 @@ from app.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.enrollment import Enrollment
+    from app.models.project_submission import ProjectReview, ProjectSubmission
     from app.models.quiz_attempt import QuizAttempt
     from app.models.role import Role
     from app.models.submission import Submission
@@ -54,6 +55,16 @@ class User(Base, TimestampMixin):
     quiz_attempts: Mapped[list[QuizAttempt]] = relationship(
         "QuizAttempt",
         back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    project_submissions: Mapped[list[ProjectSubmission]] = relationship(
+        "ProjectSubmission",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    project_reviews: Mapped[list[ProjectReview]] = relationship(
+        "ProjectReview",
+        back_populates="reviewer",
         cascade="all, delete-orphan",
     )
 

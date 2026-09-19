@@ -2,6 +2,11 @@
 from app.models.base import Base
 from app.models.enrollment import Enrollment, StudentProgress
 from app.models.final_project import ProjectRequirement, TrainingProject
+from app.models.project_submission import (
+    ProjectReview,
+    ProjectSubmission,
+    ProjectSubmissionStatus,
+)
 from app.models.quiz import Question, QuestionOption, Quiz, QuizQuestion
 from app.models.quiz_attempt import QuizAnswer, QuizAttempt, QuizAttemptStatus
 from app.models.role import Role
@@ -31,4 +36,7 @@ __all__ = [
     "QuizAttemptStatus",
     "TrainingProject",
     "ProjectRequirement",
+    "ProjectSubmission",
+    "ProjectReview",
+    "ProjectSubmissionStatus",
 ]
