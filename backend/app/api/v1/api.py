@@ -9,6 +9,7 @@ from app.api.v1 import (
     health,
     login,
     quizzes,
+    rag,
     submissions,
     tracks,
     users,
@@ -79,6 +80,12 @@ api_router.include_router(
     quizzes.attempt_router,
     prefix="/quiz-attempts",
     tags=["quiz-attempts"],
+)
+
+api_router.include_router(
+    rag.router,
+    prefix="/rag",
+    tags=["rag"],
 )
 
 api_router.include_router(
