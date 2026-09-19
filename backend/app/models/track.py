@@ -24,6 +24,9 @@ class Track(Base, TimestampMixin):
         back_populates="track",
         cascade="all, delete-orphan",
     )
+    assignments = relationship("Assignment", back_populates="track")
+    questions = relationship("Question", back_populates="track")
+    quizzes = relationship("Quiz", back_populates="track")
 
 
 class TrackModule(Base, TimestampMixin):
@@ -52,6 +55,7 @@ class TrackModule(Base, TimestampMixin):
         back_populates="module",
         cascade="all, delete-orphan",
     )
+    assignments = relationship("Assignment", back_populates="module")
 
 
 class Lesson(Base, TimestampMixin):
@@ -75,6 +79,9 @@ class Lesson(Base, TimestampMixin):
         back_populates="lesson",
         cascade="all, delete-orphan",
     )
+    assignments = relationship("Assignment", back_populates="lesson")
+    questions = relationship("Question", back_populates="lesson")
+    quizzes = relationship("Quiz", back_populates="lesson")
 
 
 class Resource(Base, TimestampMixin):

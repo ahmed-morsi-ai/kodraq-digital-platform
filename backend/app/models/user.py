@@ -10,6 +10,7 @@ from app.models.base import Base, TimestampMixin
 if TYPE_CHECKING:
     from app.models.enrollment import Enrollment
     from app.models.role import Role
+    from app.models.submission import Submission
 
 
 class User(Base, TimestampMixin):
@@ -41,6 +42,11 @@ class User(Base, TimestampMixin):
 
     enrollments: Mapped[list[Enrollment]] = relationship(
         "Enrollment",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    submissions: Mapped[list[Submission]] = relationship(
+        "Submission",
         back_populates="user",
         cascade="all, delete-orphan",
     )

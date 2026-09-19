@@ -69,3 +69,19 @@ def get_current_active_superuser(
         )
 
     return current_user
+
+
+def get_current_active_assignment_manager(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> User:
+    if current_user.is_superuser:
+        return current_user
+
+    role_name = current_user.role_rel.name.casefold() if current_user.role_rel else ""
+    if role_name not in {"admin", "instructor"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins and instructors can manage assignments",
+        )
+
+    return current_user

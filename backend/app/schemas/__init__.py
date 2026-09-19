@@ -1,5 +1,11 @@
 ﻿from __future__ import annotations
 
+from app.schemas.assignment import (
+    AssignmentBase,
+    AssignmentCreate,
+    AssignmentResponse,
+    AssignmentUpdate,
+)
 from app.schemas.enrollment import (
     Enrollment,
     EnrollmentCreate,
@@ -10,7 +16,30 @@ from app.schemas.enrollment import (
     StudentProgressDetail,
     StudentProgressUpdate,
 )
+from app.schemas.quiz import (
+    QuestionBase,
+    QuestionCreate,
+    QuestionOptionBase,
+    QuestionOptionCreate,
+    QuestionOptionResponse,
+    QuestionResponse,
+    QuestionUpdate,
+    QuizBase,
+    QuizCreate,
+    QuizQuestionBase,
+    QuizQuestionCreate,
+    QuizQuestionResponse,
+    QuizResponse,
+    QuizUpdate,
+)
 from app.schemas.role import Role, RoleCreate, RoleUpdate
+from app.schemas.submission import (
+    SubmissionBase,
+    SubmissionCreate,
+    SubmissionResponse,
+    SubmissionReview,
+    SubmissionUpdate,
+)
 from app.schemas.token import Token, TokenPayload
 from app.schemas.track import (
     Lesson,
@@ -27,6 +56,29 @@ from app.schemas.track import (
 from app.schemas.user import User, UserCreate, UserInDB, UserUpdate
 
 __all__ = [
+    "AssignmentBase",
+    "AssignmentCreate",
+    "AssignmentUpdate",
+    "AssignmentResponse",
+    "SubmissionBase",
+    "SubmissionCreate",
+    "SubmissionUpdate",
+    "SubmissionReview",
+    "SubmissionResponse",
+    "QuestionOptionBase",
+    "QuestionOptionCreate",
+    "QuestionOptionResponse",
+    "QuestionBase",
+    "QuestionCreate",
+    "QuestionUpdate",
+    "QuestionResponse",
+    "QuizQuestionBase",
+    "QuizQuestionCreate",
+    "QuizQuestionResponse",
+    "QuizBase",
+    "QuizCreate",
+    "QuizUpdate",
+    "QuizResponse",
     "Role",
     "RoleCreate",
     "RoleUpdate",

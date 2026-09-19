@@ -1,6 +1,14 @@
 ﻿from fastapi import APIRouter
 
-from app.api.v1 import enrollments, health, login, tracks, users
+from app.api.v1 import (
+    assignments,
+    enrollments,
+    health,
+    login,
+    submissions,
+    tracks,
+    users,
+)
 
 api_router = APIRouter()
 
@@ -31,4 +39,22 @@ api_router.include_router(
     enrollments.router,
     prefix="/enrollments",
     tags=["enrollments"],
+)
+
+api_router.include_router(
+    assignments.router,
+    prefix="/assignments",
+    tags=["assignments"],
+)
+
+api_router.include_router(
+    submissions.router,
+    prefix="/submissions",
+    tags=["submissions"],
+)
+
+api_router.include_router(
+    submissions.assignment_submissions_router,
+    prefix="/assignments",
+    tags=["submissions"],
 )
