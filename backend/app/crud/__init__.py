@@ -32,6 +32,14 @@ from app.crud.crud_quiz import (
     update_question,
     update_quiz,
 )
+from app.crud.crud_quiz_attempt import (
+    CRUDQuizAttempt,
+    create_quiz_attempt,
+    get_quiz_attempt,
+    get_quiz_attempts_by_quiz,
+    quiz_attempt,
+    submit_quiz_attempt,
+)
 from app.crud.crud_role import role
 from app.crud.crud_submission import (
     CRUDSubmission,
@@ -98,6 +106,12 @@ __all__ = [
     "get_quiz",
     "update_quiz",
     "delete_quiz",
+    "CRUDQuizAttempt",
+    "quiz_attempt",
+    "create_quiz_attempt",
+    "get_quiz_attempt",
+    "get_quiz_attempts_by_quiz",
+    "submit_quiz_attempt",
     "role",
     "user",
 ]

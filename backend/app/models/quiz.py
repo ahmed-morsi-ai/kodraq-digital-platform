@@ -45,6 +45,7 @@ class Question(Base, TimestampMixin):
         back_populates="question",
         cascade="all, delete-orphan",
     )
+    quiz_answers = relationship("QuizAnswer", back_populates="question")
 
 
 class QuestionOption(Base):
@@ -61,6 +62,10 @@ class QuestionOption(Base):
     is_correct = Column(Boolean, default=False, nullable=False)
 
     question = relationship("Question", back_populates="options")
+    selected_answers = relationship(
+        "QuizAnswer",
+        back_populates="selected_option",
+    )
 
 
 class Quiz(Base, TimestampMixin):
@@ -92,6 +97,11 @@ class Quiz(Base, TimestampMixin):
         back_populates="quiz",
         cascade="all, delete-orphan",
         order_by="QuizQuestion.ordering",
+    )
+    attempts = relationship(
+        "QuizAttempt",
+        back_populates="quiz",
+        cascade="all, delete-orphan",
     )
 
 

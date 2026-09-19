@@ -5,6 +5,7 @@ from app.api.v1 import (
     enrollments,
     health,
     login,
+    quizzes,
     submissions,
     tracks,
     users,
@@ -57,4 +58,16 @@ api_router.include_router(
     submissions.assignment_submissions_router,
     prefix="/assignments",
     tags=["submissions"],
+)
+
+api_router.include_router(
+    quizzes.router,
+    prefix="/quizzes",
+    tags=["quizzes"],
+)
+
+api_router.include_router(
+    quizzes.attempt_router,
+    prefix="/quiz-attempts",
+    tags=["quiz-attempts"],
 )

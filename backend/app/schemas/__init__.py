@@ -32,6 +32,12 @@ from app.schemas.quiz import (
     QuizResponse,
     QuizUpdate,
 )
+from app.schemas.quiz_attempt import (
+    QuizAnswerCreate,
+    QuizAnswerResponse,
+    QuizAttemptResponse,
+    QuizAttemptSubmit,
+)
 from app.schemas.role import Role, RoleCreate, RoleUpdate
 from app.schemas.submission import (
     SubmissionBase,
@@ -79,6 +85,10 @@ __all__ = [
     "QuizCreate",
     "QuizUpdate",
     "QuizResponse",
+    "QuizAnswerCreate",
+    "QuizAnswerResponse",
+    "QuizAttemptSubmit",
+    "QuizAttemptResponse",
     "Role",
     "RoleCreate",
     "RoleUpdate",
