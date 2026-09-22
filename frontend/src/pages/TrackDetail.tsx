@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { isAxiosError } from "axios";
 import {
   ArrowLeft,
@@ -23,9 +23,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import AssignmentList from "@/components/AssignmentList";
 import EnrollmentPanel from "@/components/EnrollmentPanel";
+import { assignmentService } from "@/services/assignment.service";
 import { enrollmentService } from "@/services/enrollment.service";
 import { trackService } from "@/services/track.service";
+import type { Assignment } from "@/types/assignment";
 import type { Enrollment } from "@/types/enrollment";
 import type {
   LessonProgress,
@@ -75,6 +78,9 @@ export default function TrackDetail() {
   const [track, setTrack] = useState<TrackCurriculum | null>(null);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [progress, setProgress] = useState<LessonProgress[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [isAssignmentsLoading, setIsAssignmentsLoading] = useState(false);
+  const [assignmentsError, setAssignmentsError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isEnrollmentLoading, setIsEnrollmentLoading] = useState(true);
   const [isProgressLoading, setIsProgressLoading] = useState(false);
@@ -116,6 +122,31 @@ export default function TrackDetail() {
     totalLessons > 0
       ? Math.round((completedLessons / totalLessons) * 100)
       : 0;
+
+  const assignmentsByModule = useMemo(
+    () => {
+      const grouped = new Map<number, Assignment[]>();
+
+      assignments
+        .filter((assignment) => assignment.is_active)
+        .forEach((assignment) => {
+          if (assignment.module_id === null) {
+            return;
+          }
+
+          const current = grouped.get(assignment.module_id) ?? [];
+          current.push(assignment);
+          grouped.set(assignment.module_id, current);
+        });
+
+      grouped.forEach((items) => {
+        items.sort((a, b) => a.ordering - b.ordering || a.id - b.id);
+      });
+
+      return grouped;
+    },
+    [assignments],
+  );
 
   const progressByLesson = useMemo(
     () =>
@@ -168,6 +199,32 @@ export default function TrackDetail() {
     }
   }, [isValidTrackId]);
 
+  const loadAssignments = useCallback(async () => {
+    if (
+      !isValidTrackId ||
+      !currentEnrollment ||
+      currentEnrollment.status === "cancelled"
+    ) {
+      setAssignments([]);
+      setAssignmentsError(null);
+      return;
+    }
+
+    setIsAssignmentsLoading(true);
+    setAssignmentsError(null);
+
+    try {
+      const data = await assignmentService.getByTrack(numericTrackId);
+      setAssignments(data);
+    } catch (requestError) {
+      console.error("Failed to load assignments", requestError);
+      setAssignments([]);
+      setAssignmentsError("Unable to load assignments right now.");
+    } finally {
+      setIsAssignmentsLoading(false);
+    }
+  }, [currentEnrollment, isValidTrackId, numericTrackId]);
+
   const loadProgress = useCallback(async (enrollmentId: number) => {
     setIsProgressLoading(true);
     setProgressError(null);
@@ -197,11 +254,14 @@ export default function TrackDetail() {
       currentEnrollment.status !== "cancelled"
     ) {
       void loadProgress(currentEnrollment.id);
+      void loadAssignments();
     } else {
       setProgress([]);
       setProgressError(null);
+      setAssignments([]);
+      setAssignmentsError(null);
     }
-  }, [currentEnrollment, loadProgress]);
+  }, [currentEnrollment, loadAssignments, loadProgress]);
 
   const handleEnrollmentCreated = (enrollment: Enrollment) => {
     setEnrollments((current) => [
@@ -470,7 +530,7 @@ export default function TrackDetail() {
               Curriculum
             </h2>
             <p className="mt-1 text-sm text-gray-500">
-              Follow the modules, lessons, and supporting resources in order.
+              Follow the modules, lessons, assignments, and supporting resources in order.
             </p>
           </div>
 
@@ -686,6 +746,13 @@ export default function TrackDetail() {
                       </div>
                     )}
                   </div>
+
+                  <AssignmentList
+                    assignments={assignmentsByModule.get(module.id) ?? []}
+                    lessons={module.lessons}
+                    isLoading={isAssignmentsLoading}
+                    error={assignmentsError}
+                  />
 
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">

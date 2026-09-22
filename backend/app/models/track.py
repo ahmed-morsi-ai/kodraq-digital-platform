@@ -1,4 +1,4 @@
-﻿from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base, TimestampMixin
@@ -25,6 +25,18 @@ class Track(Base, TimestampMixin):
         cascade="all, delete-orphan",
     )
     assignments = relationship("Assignment", back_populates="track")
+    track_instructor_links = relationship(
+        "TrackInstructor",
+        back_populates="track",
+        cascade="all, delete-orphan",
+    )
+    assignment_config = relationship(
+        "TrackAssignmentConfig",
+        back_populates="track",
+        uselist=False,
+        cascade="all, delete-orphan",
+        single_parent=True,
+    )
     questions = relationship("Question", back_populates="track")
     quizzes = relationship("Quiz", back_populates="track")
     training_projects = relationship(

@@ -18,6 +18,7 @@ class Question(Base, TimestampMixin):
     id = Column(Integer, primary_key=True, index=True)
     text = Column(Text, nullable=False)
     question_type = Column(String(32), nullable=False)
+    difficulty = Column(Integer, default=1, nullable=False)
     points = Column(Integer, default=1, nullable=False)
     explanation = Column(Text, nullable=True)
     track_id = Column(

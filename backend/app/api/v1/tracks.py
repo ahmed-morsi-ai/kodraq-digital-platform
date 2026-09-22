@@ -7,7 +7,9 @@ from sqlalchemy import select
 
 from app.api.deps import (
     SessionDep,
+    get_current_active_assignment_manager,
     get_current_active_superuser,
+    get_current_active_user,
 )
 from app.crud.crud_track import (
     lesson as crud_lesson,
@@ -21,7 +23,11 @@ from app.crud.crud_track import (
 from app.crud.crud_track import (
     track_module as crud_track_module,
 )
+from app.crud.crud_track_assignment_config import (
+    track_assignment_config as crud_track_assignment_config,
+)
 from app.models.track import Track
+from app.models.track_assignment_config import TrackAssignmentConfig
 from app.models.user import User as UserModel
 from app.schemas.track import (
     Lesson,
@@ -34,12 +40,27 @@ from app.schemas.track import (
     TrackModuleCreate,
     TrackSummary,
 )
+from app.schemas.track_assignment_config import (
+    TrackAssignmentConfigResponse,
+    TrackAssignmentConfigUpdate,
+)
 
 router = APIRouter()
 
 CurrentSuperuserDep = Annotated[
     UserModel,
     Depends(get_current_active_superuser),
+]
+
+
+CurrentUserDep = Annotated[
+    UserModel,
+    Depends(get_current_active_user),
+]
+
+CurrentAssignmentConfigManagerDep = Annotated[
+    UserModel,
+    Depends(get_current_active_assignment_manager),
 ]
 
 
@@ -74,6 +95,92 @@ def read_track_curriculum(
         )
 
     return track
+
+
+@router.get(
+    "/{track_id}/assignment-config/",
+    response_model=TrackAssignmentConfigResponse,
+)
+def read_track_assignment_config(
+    track_id: int,
+    session: SessionDep,
+    current_user: CurrentUserDep,
+) -> TrackAssignmentConfig:
+    del current_user
+
+    track = crud_track.get(session, id=track_id)
+    if not track:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Track not found",
+        )
+
+    return crud_track_assignment_config.get_or_create_default(
+        session,
+        track_id=track_id,
+    )
+
+
+def _update_track_assignment_config(
+    track_id: int,
+    session: SessionDep,
+    config_in: TrackAssignmentConfigUpdate,
+    current_user: UserModel,
+) -> TrackAssignmentConfig:
+    del current_user
+
+    track = crud_track.get(session, id=track_id)
+    if not track:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Track not found",
+        )
+
+    config = crud_track_assignment_config.get_or_create_default(
+        session,
+        track_id=track_id,
+    )
+    return crud_track_assignment_config.update(
+        session,
+        db_obj=config,
+        obj_in=config_in,
+    )
+
+
+@router.patch(
+    "/{track_id}/assignment-config/",
+    response_model=TrackAssignmentConfigResponse,
+)
+def patch_track_assignment_config(
+    track_id: int,
+    session: SessionDep,
+    config_in: TrackAssignmentConfigUpdate,
+    current_user: CurrentAssignmentConfigManagerDep,
+) -> TrackAssignmentConfig:
+    return _update_track_assignment_config(
+        track_id,
+        session,
+        config_in,
+        current_user,
+    )
+
+
+@router.put(
+    "/{track_id}/assignment-config/",
+    response_model=TrackAssignmentConfigResponse,
+)
+def put_track_assignment_config(
+    track_id: int,
+    session: SessionDep,
+    config_in: TrackAssignmentConfigUpdate,
+    current_user: CurrentAssignmentConfigManagerDep,
+) -> TrackAssignmentConfig:
+    return _update_track_assignment_config(
+        track_id,
+        session,
+        config_in,
+        current_user,
+    )
 
 
 @router.post(

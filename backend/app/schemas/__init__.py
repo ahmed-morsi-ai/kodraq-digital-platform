@@ -54,8 +54,11 @@ from app.schemas.role import Role, RoleCreate, RoleUpdate
 from app.schemas.submission import (
     SubmissionBase,
     SubmissionCreate,
+    SubmissionDetailResponse,
     SubmissionResponse,
     SubmissionReview,
+    SubmissionReviewCreate,
+    SubmissionReviewResponse,
     SubmissionUpdate,
 )
 from app.schemas.token import Token, TokenPayload
@@ -71,6 +74,10 @@ from app.schemas.track import (
     TrackModuleCreate,
     TrackSummary,
 )
+from app.schemas.track_assignment_config import (
+    TrackAssignmentConfigResponse,
+    TrackAssignmentConfigUpdate,
+)
 from app.schemas.user import User, UserCreate, UserInDB, UserUpdate
 
 __all__ = [
@@ -82,7 +89,10 @@ __all__ = [
     "SubmissionCreate",
     "SubmissionUpdate",
     "SubmissionReview",
+    "SubmissionReviewCreate",
+    "SubmissionReviewResponse",
     "SubmissionResponse",
+    "SubmissionDetailResponse",
     "QuestionOptionBase",
     "QuestionOptionCreate",
     "QuestionOptionResponse",
@@ -126,6 +136,8 @@ __all__ = [
     "TrackCreate",
     "TrackSummary",
     "TrackCurriculum",
+    "TrackAssignmentConfigResponse",
+    "TrackAssignmentConfigUpdate",
     "Enrollment",
     "EnrollmentCreate",
     "EnrollmentUpdate",

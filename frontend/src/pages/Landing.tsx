@@ -1,8 +1,9 @@
-﻿import { ArrowUpRight, BrainCircuit, BriefcaseBusiness, ChevronDown, Code2, Layers3, Sparkles } from "lucide-react";
+﻿import { ArrowUpRight, BriefcaseBusiness, Code2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
+import PublicLandingHero from "@/components/public/PublicLandingHero";
+
 import CinematicIntro from "@/components/public/CinematicIntro";
-import NeuralParticles from "@/components/public/NeuralParticles";
 
 const services = [
   "Web & Software Development",
@@ -21,7 +22,7 @@ export default function Landing() {
     >
       <CinematicIntro />
 
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.06] bg-[#050817]/55 backdrop-blur-2xl">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8">
           <Link to="/" className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-300/20 bg-emerald-300/10 text-sm font-black text-emerald-300 shadow-[0_0_28px_rgba(16,185,129,0.12)]">
@@ -29,24 +30,24 @@ export default function Landing() {
             </div>
 
             <div>
-              <div className="text-sm font-black tracking-tight">Kodraq Digital</div>
-              <div className="text-[10px] uppercase tracking-[0.32em] text-white/35">
+              <div className="text-sm font-black tracking-tight text-slate-900">Kodraq Digital</div>
+              <div className="text-[10px] uppercase tracking-[0.32em] text-slate-400">
                 Learn. Build. Automate.
               </div>
             </div>
           </Link>
 
-          <nav className="hidden items-center gap-7 text-sm text-white/55 md:flex">
-            <a className="transition hover:text-white" href="#home">
+          <nav className="hidden items-center gap-7 text-sm text-slate-500 md:flex">
+            <a className="transition hover:text-slate-900" href="#home">
               الرئيسية
             </a>
-            <a className="transition hover:text-white" href="#paths">
-              المسارات
+            <a className="transition hover:text-slate-900" href="#paths">
+              Tracks
             </a>
-            <a className="transition hover:text-white" href="#services">
+            <a className="transition hover:text-slate-900" href="#services">
               الخدمات
             </a>
-            <a className="transition hover:text-white" href="#how-it-works">
+            <a className="transition hover:text-slate-900" href="#how-it-works">
               كيف نعمل
             </a>
           </nav>
@@ -71,151 +72,18 @@ export default function Landing() {
       </header>
 
       <main>
-        <section
-          id="home"
-          className="relative isolate flex min-h-screen items-center overflow-hidden pt-20"
-        >
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(16,185,129,0.12),transparent_28%),radial-gradient(circle_at_80%_25%,rgba(34,211,238,0.10),transparent_30%),linear-gradient(180deg,#050817_0%,#07111c_100%)]" />
+        <PublicLandingHero />
 
-          <div className="absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] [background-size:64px_64px]" />
-
-          <div className="absolute inset-y-0 left-0 w-1/2 opacity-90">
-            <NeuralParticles particleCount={92} />
-          </div>
-
-          <div className="relative z-10 mx-auto grid w-full max-w-7xl gap-12 px-5 py-20 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-16">
-            <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/15 bg-emerald-300/[0.06] px-3 py-1.5 text-[11px] font-semibold text-emerald-200/90 backdrop-blur-xl">
-                <Sparkles className="h-3.5 w-3.5" />
-                شركة تقنية يقودها الذكاء الاصطناعي
-              </div>
-
-              <h1 className="mt-7 text-5xl font-black leading-[1.05] tracking-[-0.04em] sm:text-6xl lg:text-7xl">
-                نبني
-                <span className="bg-gradient-to-r from-emerald-300 via-cyan-300 to-sky-300 bg-clip-text text-transparent">
-                  {" "}
-                  المواهب
-                </span>
-                <br />
-                ونبني
-                <span className="bg-gradient-to-r from-cyan-300 via-emerald-300 to-white bg-clip-text text-transparent">
-                  {" "}
-                  المنتجات
-                </span>
-                .
-              </h1>
-
-              <p className="mt-7 max-w-2xl text-base leading-8 text-white/58 sm:text-lg">
-                Kodraq Digital تجمع التدريب المكثف، الذكاء الاصطناعي، تطوير
-                البرمجيات، وإدارة المشاريع داخل منظومة واحدة تساعد الأشخاص على
-                التعلم وتساعد الشركات على بناء حلول تقنية حقيقية.
-              </p>
-
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <a
-                  href="#paths"
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-300 to-cyan-300 px-6 py-3.5 text-sm font-black text-slate-950 shadow-[0_14px_50px_rgba(16,185,129,0.18)] transition hover:-translate-y-0.5"
-                >
-                  اكتشف مسارك
-                  <ArrowUpRight className="h-4 w-4" />
-                </a>
-
-                <a
-                  href="#services"
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-3.5 text-sm font-semibold text-white/85 backdrop-blur-xl transition hover:bg-white/[0.08]"
-                >
-                  استكشف خدمات Kodraq
-                  <Layers3 className="h-4 w-4" />
-                </a>
-              </div>
-
-              <div className="mt-10 grid max-w-2xl grid-cols-2 gap-3 sm:grid-cols-4">
-                {[
-                  ["AI", "في قلب المنصة"],
-                  ["20+", "مسارات تقنية"],
-                  ["1", "منظومة موحدة"],
-                  ["GCC", "السوق المستهدف"],
-                ].map(([value, label]) => (
-                  <div
-                    key={value}
-                    className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4 backdrop-blur-xl"
-                  >
-                    <div className="text-xl font-black text-white">{value}</div>
-                    <div className="mt-1 text-[11px] text-white/40">{label}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="relative mx-auto w-full max-w-xl">
-              <div className="absolute -inset-10 rounded-full bg-emerald-300/[0.07] blur-3xl" />
-
-              <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.035] p-4 shadow-[0_40px_120px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
-                <div className="relative aspect-square overflow-hidden rounded-[26px] border border-white/[0.07] bg-[#07111d]">
-                  <NeuralParticles particleCount={110} />
-
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_46%,rgba(16,185,129,0.18),transparent_24%),radial-gradient(circle_at_55%_58%,rgba(34,211,238,0.08),transparent_38%)]" />
-
-                  <div className="absolute left-1/2 top-1/2 flex h-44 w-44 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-emerald-300/15 bg-emerald-300/[0.03] shadow-[0_0_120px_rgba(16,185,129,0.16)]">
-                    <div className="flex h-28 w-28 items-center justify-center rounded-full border border-cyan-300/15 bg-cyan-300/[0.04]">
-                      <BrainCircuit className="h-14 w-14 text-emerald-200/80" strokeWidth={1.2} />
-                    </div>
-                  </div>
-
-                  <div className="absolute bottom-4 left-4 right-4 grid grid-cols-2 gap-3">
-                    <div className="rounded-2xl border border-white/[0.07] bg-black/25 p-4 backdrop-blur-xl">
-                      <div className="flex items-center gap-2 text-xs font-semibold text-emerald-200">
-                        <Code2 className="h-4 w-4" />
-                        Kodraq Academy
-                      </div>
-                      <p className="mt-2 text-xs leading-5 text-white/45">
-                        Learn with dedicated AI guidance, practical tasks and real projects.
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/[0.07] bg-black/25 p-4 backdrop-blur-xl">
-                      <div className="flex items-center gap-2 text-xs font-semibold text-cyan-200">
-                        <BriefcaseBusiness className="h-4 w-4" />
-                        Kodraq Services
-                      </div>
-                      <p className="mt-2 text-xs leading-5 text-white/45">
-                        Turn business requirements into structured, production-ready delivery.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 flex items-center justify-between px-2 text-[11px] text-white/35">
-                <span>AI-powered company operating platform</span>
-                <span className="inline-flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.8)]" />
-                  Live concept
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <a
-            href="#paths"
-            className="absolute bottom-7 left-1/2 z-20 -translate-x-1/2 text-white/30 transition hover:text-white/70"
-            aria-label="Scroll to pathways"
-          >
-            <ChevronDown className="h-6 w-6 animate-bounce" />
-          </a>
-        </section>
-
-        <section
-          id="paths"
+        <section id="paths"
           className="relative border-y border-white/[0.06] bg-[#07111d] py-20"
         >
           <div className="mx-auto max-w-7xl px-5 sm:px-8">
             <div className="max-w-2xl">
               <div className="text-xs font-semibold uppercase tracking-[0.28em] text-emerald-300/80">
-                Choose your path
+                Choose Your Path
               </div>
               <h2 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">
-                مساران، ومنظومة واحدة.
+                مساران. One Platform.
               </h2>
               <p className="mt-4 text-sm leading-7 text-white/45 sm:text-base">
                 سواء كنت تبني مستقبلك التقني أو تبني منتجًا لشركتك، Kodraq مصممة
@@ -299,7 +167,7 @@ export default function Landing() {
             <div className="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:items-end">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300/80">
-                  What we build
+                  What We Build
                 </div>
                 <h2 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">
                   حلول تقنية مبنية للتنفيذ الحقيقي.
@@ -331,13 +199,13 @@ export default function Landing() {
           <div className="mx-auto max-w-7xl px-5 sm:px-8">
             <div className="max-w-2xl">
               <div className="text-xs font-semibold uppercase tracking-[0.28em] text-emerald-300/80">
-                How Kodraq works
+                How Kodraq Works
               </div>
               <h2 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">
                 AI في المنتصف، والإنسان في القرار.
               </h2>
               <p className="mt-4 text-sm leading-7 text-white/45 sm:text-base">
-                الذكاء الاصطناعي يحلل ويقترح ويساعد؛ والقرارات الحساسة تظل تحت
+                الـAI يحلل ويقترح ويساعد؛ والقرارات الحساسة تظل تحت
                 إشراف بشري واضح.
               </p>
             </div>
@@ -376,6 +244,10 @@ export default function Landing() {
     </div>
   );
 }
+
+
+
+
 
 
 

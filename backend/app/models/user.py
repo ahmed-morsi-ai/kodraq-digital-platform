@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
@@ -14,7 +14,8 @@ if TYPE_CHECKING:
     from app.models.project_submission import ProjectReview, ProjectSubmission
     from app.models.quiz_attempt import QuizAttempt
     from app.models.role import Role
-    from app.models.submission import Submission
+    from app.models.submission import Submission, SubmissionReview
+    from app.models.track_instructor import TrackInstructor
 
 
 class User(Base, TimestampMixin):
@@ -52,6 +53,15 @@ class User(Base, TimestampMixin):
     submissions: Mapped[list[Submission]] = relationship(
         "Submission",
         back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    submission_reviews: Mapped[list[SubmissionReview]] = relationship(
+        "SubmissionReview",
+        back_populates="reviewer",
+    )
+    instructor_track_links: Mapped[list[TrackInstructor]] = relationship(
+        "TrackInstructor",
+        back_populates="instructor",
         cascade="all, delete-orphan",
     )
     quiz_attempts: Mapped[list[QuizAttempt]] = relationship(

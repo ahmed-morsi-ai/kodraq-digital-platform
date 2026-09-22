@@ -7,9 +7,11 @@ from sqlalchemy.orm import Session
 
 from app.crud.base import CRUDBase
 from app.models.submission import Submission
+from app.models.submission import SubmissionReview as SubmissionReviewModel
 from app.schemas.submission import (
     SubmissionCreate,
     SubmissionReview,
+    SubmissionReviewCreate,
     SubmissionUpdate,
 )
 
@@ -79,6 +81,34 @@ class CRUDSubmission(
             db_obj=db_obj,
             obj_in={"status": obj_in.status},
         )
+
+    def create_review_and_transition(
+        self,
+        db: Session,
+        *,
+        db_obj: Submission,
+        reviewer_id: int,
+        obj_in: SubmissionReviewCreate,
+    ) -> Submission:
+        review = SubmissionReviewModel(
+            submission_id=db_obj.id,
+            reviewer_id=reviewer_id,
+            feedback=obj_in.feedback,
+            score=obj_in.score,
+            resulting_status=obj_in.resulting_status.value,
+        )
+        db_obj.status = obj_in.resulting_status.value
+        db.add(review)
+        db.add(db_obj)
+
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        db.refresh(db_obj)
+        return db_obj
 
 
 submission = CRUDSubmission(Submission)
