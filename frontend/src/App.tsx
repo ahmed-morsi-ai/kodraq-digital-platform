@@ -1,4 +1,4 @@
-﻿import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
 import RootLayout from "./layouts/RootLayout";
 import Dashboard from "./pages/Dashboard";
@@ -8,6 +8,7 @@ import MyLearning from "./pages/MyLearning";
 import NotFound from "./pages/NotFound";
 import QuizResults from "./pages/QuizResults";
 import QuizTaker from "./pages/QuizTaker";
+import FinalProject from "./pages/FinalProject";
 import TrackDetail from "./pages/TrackDetail";
 import Tracks from "./pages/Tracks";
 
@@ -23,6 +24,10 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/tracks" element={<Tracks />} />
             <Route path="/tracks/:trackId" element={<TrackDetail />} />
+            <Route
+              path="/tracks/:trackId/final-project"
+              element={<FinalProject />}
+            />
             <Route path="/my-learning" element={<MyLearning />} />
             <Route
               path="/quizzes/:quizId/attempts/:attemptId"

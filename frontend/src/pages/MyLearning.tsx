@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BookOpen,
   ChevronRight,
@@ -376,7 +376,7 @@ export default function MyLearning() {
                   </div>
                 </CardContent>
 
-                <CardFooter className="pt-0">
+                <CardFooter className="flex flex-col gap-2 pt-0 sm:flex-row">
                   <Button
                     asChild
                     variant="ghost"
@@ -387,6 +387,16 @@ export default function MyLearning() {
                         ? "Continue learning"
                         : "Start learning"}
                       <ChevronRight className="h-4 w-4" />
+                    </Link>
+                  </Button>
+
+                  <Button
+                    asChild
+                    variant="outline"
+                    className="w-full justify-center border-blue-200 text-blue-700 hover:bg-blue-50"
+                  >
+                    <Link to={`/tracks/${data.track.id}/final-project`}>
+                      Final project
                     </Link>
                   </Button>
                 </CardFooter>
