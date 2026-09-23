@@ -22,6 +22,7 @@ class QuestionOptionResponse(QuestionOptionBase):
 
 
 class QuestionBase(BaseModel):
+    difficulty: int = 1
     text: str
     question_type: str
     points: int = 1
@@ -102,4 +103,77 @@ class QuizResponse(QuizBase):
     questions: list[QuizQuestionResponse] = Field(
         default_factory=list,
         validation_alias="question_links",
+    )
+
+
+class StudentQuestionOptionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    question_id: int
+    text: str
+
+
+class StudentQuestionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    text: str
+    question_type: str
+    points: int
+    options: list[StudentQuestionOptionResponse] = Field(
+        default_factory=list
+    )
+
+
+class StudentQuizQuestionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    question_id: int
+    ordering: int
+    question: StudentQuestionResponse
+
+
+class StudentQuizResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    description: str | None = None
+    track_id: int | None = None
+    lesson_id: int | None = None
+    passing_score: int
+    time_limit_minutes: int | None = None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    questions: list[StudentQuizQuestionResponse] = Field(
+        default_factory=list,
+        validation_alias="question_links",
+    )
+
+
+class QuizResultQuestionResponse(BaseModel):
+    question_id: int
+    question_text: str
+    points: int
+    selected_option_id: int | None = None
+    selected_option_text: str | None = None
+    correct_option_ids: list[int] = Field(default_factory=list)
+    correct_option_texts: list[str] = Field(default_factory=list)
+    is_correct: bool
+
+
+class QuizResultResponse(BaseModel):
+    attempt_id: int
+    quiz_id: int
+    score: float
+    max_score: int
+    percentage: float
+    passed: bool
+    time_taken_seconds: float
+    is_flagged: bool
+    flag_reason: str | None = None
+    questions: list[QuizResultQuestionResponse] = Field(
+        default_factory=list
     )

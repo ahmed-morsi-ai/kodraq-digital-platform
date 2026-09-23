@@ -8,6 +8,7 @@ from app.api.v1 import (
     graduation,
     health,
     login,
+    questions,
     quizzes,
     rag,
     submissions,
@@ -38,6 +39,18 @@ api_router.include_router(
     tracks.router,
     prefix="/tracks",
     tags=["tracks"],
+)
+
+api_router.include_router(
+    questions.track_router,
+    prefix="/tracks",
+    tags=["questions"],
+)
+
+api_router.include_router(
+    questions.router,
+    prefix="/questions",
+    tags=["questions"],
 )
 
 api_router.include_router(

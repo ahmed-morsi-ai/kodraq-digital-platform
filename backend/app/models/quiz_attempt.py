@@ -46,6 +46,8 @@ class QuizAttempt(Base, TimestampMixin):
     )
     score = Column(Float, nullable=True)
     passed = Column(Boolean, default=False, nullable=False)
+    is_flagged = Column(Boolean, default=False, nullable=False, index=True)
+    flag_reason = Column(String(255), nullable=True)
     status = Column(
         String(32),
         default=QuizAttemptStatus.IN_PROGRESS.value,

@@ -22,6 +22,8 @@ class QuizAnswerResponse(QuizAnswerCreate):
 
 class QuizAttemptSubmit(BaseModel):
     answers: list[QuizAnswerCreate] = Field(default_factory=list)
+    is_flagged: bool = False
+    flag_reason: str | None = Field(default=None, max_length=255)
 
 
 class QuizAttemptResponse(BaseModel):
@@ -32,6 +34,8 @@ class QuizAttemptResponse(BaseModel):
     user_id: int
     score: float | None = None
     passed: bool
+    is_flagged: bool
+    flag_reason: str | None = None
     status: QuizAttemptStatus
     started_at: datetime
     completed_at: datetime | None = None
