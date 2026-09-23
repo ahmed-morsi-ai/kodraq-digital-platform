@@ -1,13 +1,14 @@
-from enum import Enum
+﻿from enum import Enum
 
 from sqlalchemy import (
-    JSON,
     CheckConstraint,
     Column,
+    DateTime,
     ForeignKey,
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -26,6 +27,11 @@ class ProjectSubmissionStatus(str, Enum):
 class ProjectSubmission(Base, TimestampMixin):
     __tablename__ = "project_submissions"
     __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "student_id",
+            name="uq_project_submissions_project_student",
+        ),
         CheckConstraint(
             "status IN ('DRAFT', 'SUBMITTED', 'UNDER_REVIEW', "
             "'CHANGES_REQUIRED', 'APPROVED', 'REJECTED')",
@@ -40,51 +46,35 @@ class ProjectSubmission(Base, TimestampMixin):
         nullable=False,
         index=True,
     )
-    user_id = Column(
+    student_id = Column(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    repository_url = Column(String(512), nullable=True)
+    github_url = Column(String(512), nullable=True)
     live_url = Column(String(512), nullable=True)
-    documentation_url = Column(String(512), nullable=True)
+    file_url = Column(String(512), nullable=True)
+    student_notes = Column(Text, nullable=True)
     status = Column(
         String(32),
         default=ProjectSubmissionStatus.DRAFT.value,
         nullable=False,
         index=True,
     )
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
 
-    project = relationship("TrainingProject", back_populates="submissions")
-    user = relationship("User", back_populates="project_submissions")
+    project = relationship(
+        "TrainingProject",
+        back_populates="submissions",
+    )
+    student = relationship(
+        "User",
+        back_populates="project_submissions",
+    )
     reviews = relationship(
         "ProjectReview",
         back_populates="submission",
         cascade="all, delete-orphan",
         order_by="ProjectReview.created_at",
     )
-
-
-class ProjectReview(Base, TimestampMixin):
-    __tablename__ = "project_reviews"
-
-    id = Column(Integer, primary_key=True, index=True)
-    submission_id = Column(
-        Integer,
-        ForeignKey("project_submissions.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    reviewer_id = Column(
-        Integer,
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    rubric_scores = Column(JSON, nullable=True)
-    feedback = Column(Text, nullable=True)
-    status_decision = Column(String(32), nullable=False)
-
-    submission = relationship("ProjectSubmission", back_populates="reviews")
-    reviewer = relationship("User", back_populates="project_reviews")

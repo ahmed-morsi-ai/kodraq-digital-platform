@@ -1,6 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasPath, BaseModel, ConfigDict, Field
 
 
 # Shared properties
@@ -31,6 +31,10 @@ class UserInDBBase(UserBase):
     id: int
     email: str
     full_name: str
+    role_name: str | None = Field(
+        default=None,
+        validation_alias=AliasPath("role_rel", "name"),
+    )
 
 
 # Properties to return to client

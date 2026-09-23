@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter
+from fastapi import APIRouter
 
 from app.api.v1 import (
     ai,
@@ -39,6 +39,12 @@ api_router.include_router(
     tracks.router,
     prefix="/tracks",
     tags=["tracks"],
+)
+
+api_router.include_router(
+    final_projects.track_router,
+    prefix="/tracks",
+    tags=["final-projects"],
 )
 
 api_router.include_router(

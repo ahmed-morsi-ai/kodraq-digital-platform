@@ -2,7 +2,7 @@ from app.models.ai import AIRequestLog
 from app.models.assignment import Assignment
 from app.models.base import Base
 from app.models.enrollment import Enrollment, StudentProgress
-from app.models.final_project import ProjectRequirement, TrainingProject
+from app.models.final_project import ProjectRequirement, ProjectReview, TrainingProject
 from app.models.graduation import (
     GraduationEvaluation,
     GraduationEvaluationStatus,
@@ -10,7 +10,6 @@ from app.models.graduation import (
 )
 from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
 from app.models.project_submission import (
-    ProjectReview,
     ProjectSubmission,
     ProjectSubmissionStatus,
 )

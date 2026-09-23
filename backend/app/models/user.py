@@ -10,8 +10,9 @@ from app.models.base import Base, TimestampMixin
 if TYPE_CHECKING:
     from app.models.ai import AIRequestLog
     from app.models.enrollment import Enrollment
+    from app.models.final_project import ProjectReview
     from app.models.graduation import GraduationEvaluation
-    from app.models.project_submission import ProjectReview, ProjectSubmission
+    from app.models.project_submission import ProjectSubmission
     from app.models.quiz_attempt import QuizAttempt
     from app.models.role import Role
     from app.models.submission import Submission, SubmissionReview
@@ -71,7 +72,7 @@ class User(Base, TimestampMixin):
     )
     project_submissions: Mapped[list[ProjectSubmission]] = relationship(
         "ProjectSubmission",
-        back_populates="user",
+        back_populates="student",
         cascade="all, delete-orphan",
     )
     project_reviews: Mapped[list[ProjectReview]] = relationship(
