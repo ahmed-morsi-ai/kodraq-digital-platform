@@ -18,6 +18,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import GraduationClaimCard from "@/components/GraduationClaimCard";
 import { enrollmentService } from "@/services/enrollment.service";
 import { trackService } from "@/services/track.service";
 import type {
@@ -376,6 +377,13 @@ export default function MyLearning() {
                   </div>
                 </CardContent>
 
+                <div className="px-6 pb-5">
+                  <GraduationClaimCard
+                    trackId={data.track.id}
+                    trackName={data.track.name}
+                  />
+                </div>
+
                 <CardFooter className="flex flex-col gap-2 pt-0 sm:flex-row">
                   <Button
                     asChild
@@ -408,4 +416,3 @@ export default function MyLearning() {
     </div>
   );
 }
-

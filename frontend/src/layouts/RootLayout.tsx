@@ -1,9 +1,10 @@
-﻿import { Link, Outlet, useLocation } from "react-router-dom";
+import { Link, Outlet, useLocation } from "react-router-dom";
 
 const navigation = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Tracks", href: "/tracks" },
-  { label: "My Learning", href: "/my-learning" },
+    { label: "My Learning", href: "/my-learning" },
+  { label: "Certificates", href: "/certificates" },
 ];
 
 export default function RootLayout() {

@@ -5,12 +5,14 @@ import Dashboard from "./pages/Dashboard";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import MyLearning from "./pages/MyLearning";
+import MyCertificates from "./pages/MyCertificates";
 import NotFound from "./pages/NotFound";
 import QuizResults from "./pages/QuizResults";
 import QuizTaker from "./pages/QuizTaker";
 import FinalProject from "./pages/FinalProject";
 import TrackDetail from "./pages/TrackDetail";
 import Tracks from "./pages/Tracks";
+import VerifyCertificate from "./pages/VerifyCertificate";
 
 function App() {
   return (
@@ -18,6 +20,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/verify/:code" element={<VerifyCertificate />} />
 
         <Route element={<ProtectedRoute />}>
           <Route element={<RootLayout />}>
@@ -29,6 +32,7 @@ function App() {
               element={<FinalProject />}
             />
             <Route path="/my-learning" element={<MyLearning />} />
+            <Route path="/certificates" element={<MyCertificates />} />
             <Route
               path="/quizzes/:quizId/attempts/:attemptId"
               element={<QuizTaker />}
