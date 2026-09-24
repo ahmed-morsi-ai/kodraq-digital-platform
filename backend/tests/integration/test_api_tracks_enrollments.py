@@ -138,8 +138,19 @@ def test_track_curriculum_endpoints_and_rbac(client, db_session):
     )
     assert locked_curriculum.status_code == status.HTTP_200_OK
     locked_data = locked_curriculum.json()
+
     assert locked_data["id"] == track_id
-    assert locked_data["modules"] == []
+    assert len(locked_data["modules"]) == 1
+
+    locked_module = locked_data["modules"][0]
+    assert locked_module["title"] == "FastAPI"
+    assert len(locked_module["lessons"]) == 1
+    assert len(locked_module["resources"]) == 1
+
+    locked_lesson = locked_module["lessons"][0]
+    assert locked_lesson["title"] == "Dependencies"
+    assert locked_lesson["content"]
+    assert locked_lesson["content"] != "Dependency injection"
 
     curriculum = client.get(
         f"/api/v1/tracks/{track_id}/curriculum",
@@ -151,6 +162,7 @@ def test_track_curriculum_endpoints_and_rbac(client, db_session):
     assert len(data["modules"]) == 1
     assert len(data["modules"][0]["lessons"]) == 1
     assert len(data["modules"][0]["resources"]) == 1
+    assert data["modules"][0]["lessons"][0]["content"] == "Dependency injection"
 
 
 def test_enrollment_and_progress_endpoints(client, db_session):
@@ -392,4 +404,3 @@ def test_invalid_progress_lesson_is_rejected(client, db_session):
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "enrolled track" in response.json()["detail"].lower()
-

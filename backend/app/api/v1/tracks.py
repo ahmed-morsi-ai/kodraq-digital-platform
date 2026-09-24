@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -53,7 +53,6 @@ CurrentSuperuserDep = Annotated[
     Depends(get_current_active_superuser),
 ]
 
-
 CurrentUserDep = Annotated[
     UserModel,
     Depends(get_current_active_user),
@@ -70,7 +69,7 @@ def read_tracks(
     session: SessionDep,
     skip: int = 0,
     limit: int = 100,
-) -> list[Track]:
+) -> Any:
     tracks = crud_track.get_active(
         session,
         skip=skip,
@@ -84,7 +83,7 @@ def read_track_curriculum(
     track_id: int,
     session: SessionDep,
     current_user: CurrentUserDep,
-) -> Track:
+) -> TrackCurriculum:
     track = crud_track.get_with_curriculum(
         session,
         id=track_id,
@@ -95,19 +94,46 @@ def read_track_curriculum(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Track not found",
         )
+
     enrollment = session.scalar(
         select(Enrollment).where(
             Enrollment.user_id == current_user.id,
             Enrollment.track_id == track_id,
         )
     )
+
     track_payload = TrackCurriculum.model_validate(track, from_attributes=True)
+
     if not current_user.is_superuser and (
         enrollment is None or enrollment.status != "active"
     ):
-        track_payload = track_payload.model_copy(update={"modules": []})
+        track_payload = track_payload.model_copy(
+            update={
+                "modules": [
+                    module.model_copy(
+                        update={
+                            "lessons": [
+                                lesson.model_copy(
+                                    update={
+                                        "content": (
+                                            "هذا المحتوى مقفل. "
+                                            "يرجى الاشتراك في المسار "
+                                            "لتتمكن من عرض تفاصيل الدرس."
+                                        )
+                                    }
+                                )
+                                for lesson in module.lessons
+                            ]
+                        }
+                    )
+                    for module in track_payload.modules
+                ]
+            }
+        )
 
     return track_payload
+
+
 @router.get(
     "/{track_id}/assignment-config/",
     response_model=TrackAssignmentConfigResponse,
@@ -208,8 +234,7 @@ def create_track(
 
     existing = session.execute(
         select(Track).where(
-            (Track.slug == track_in.slug)
-            | (Track.name == track_in.name)
+            (Track.slug == track_in.slug) | (Track.name == track_in.name)
         )
     ).scalar_one_or_none()
 

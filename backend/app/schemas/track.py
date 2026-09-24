@@ -58,12 +58,20 @@ class TrackModule(TrackModuleBase):
     resources: list[Resource] = Field(default_factory=list)
 
 
+from pydantic import BaseModel
+from typing import Optional
+
 class TrackBase(BaseModel):
     name: str
     slug: str
-    description: str | None = None
-    is_active: bool = True
+    description: Optional[str] = None
     ordering: int = 0
+    is_active: bool = True
+    
+    # أضف هذه الحقول الثلاثة لتمرير بيانات الدفع للواجهة الأمامية
+    is_premium: bool = False
+    price: Optional[float] = None
+    currency: str = "EGP"
 
 
 class TrackCreate(TrackBase):
@@ -83,13 +91,12 @@ class TrackSummary(TrackBase):
     id: int
 
 
-class TrackCurriculum(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class TrackCurriculum(TrackBase):
     id: int
-    name: str
-    slug: str
-    description: str | None = None
-    is_active: bool
-    ordering: int
-    modules: list[TrackModule] = Field(default_factory=list)
+    is_premium: bool = False
+    price: Optional[float] = None
+    currency: str = "EGP"
+    modules: list[TrackModule] = []
+    
+    class Config:
+        from_attributes = True
