@@ -1,9 +1,10 @@
-﻿import type { Track } from "./track";
+import type { Track } from "./track";
 
 export type EnrollmentStatus =
   | "active"
   | "completed"
-  | "cancelled";
+  | "cancelled"
+  | "pending_payment";
 
 export type StudentProgressStatus =
   | "not_started"

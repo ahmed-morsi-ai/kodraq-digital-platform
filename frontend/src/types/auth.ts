@@ -4,6 +4,7 @@ export interface User {
   full_name?: string;
   is_active: boolean;
   is_superuser: boolean;
+  role?: string | null;
   role_name: string | null;
 }
 

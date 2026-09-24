@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/card";
 import AssignmentList from "@/components/AssignmentList";
 import EnrollmentPanel from "@/components/EnrollmentPanel";
+import PaymentCheckout from "@/components/PaymentCheckout";
 import QuizList from "@/components/QuizList";
 import { assignmentService } from "@/services/assignment.service";
 import { enrollmentService } from "@/services/enrollment.service";
@@ -462,11 +463,19 @@ export default function TrackDetail() {
           <>
             {trackId ? <QuizList trackId={Number(trackId)} /> : null}
 
-            <EnrollmentPanel
-              trackId={numericTrackId}
-              enrollment={currentEnrollment}
-              onEnrollmentCreated={handleEnrollmentCreated}
-            />
+            {track?.is_premium ? (
+              <PaymentCheckout
+                track={track}
+                enrollment={currentEnrollment}
+                onEnrollmentCreated={handleEnrollmentCreated}
+              />
+            ) : (
+              <EnrollmentPanel
+                trackId={numericTrackId}
+                enrollment={currentEnrollment}
+                onEnrollmentCreated={handleEnrollmentCreated}
+              />
+            )}
           </>
         )}
 

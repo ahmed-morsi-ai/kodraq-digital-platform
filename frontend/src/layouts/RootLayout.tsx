@@ -1,14 +1,19 @@
-import { Link, Outlet, useLocation } from "react-router-dom";
-
-const navigation = [
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Tracks", href: "/tracks" },
-    { label: "My Learning", href: "/my-learning" },
-  { label: "Certificates", href: "/certificates" },
-];
+﻿import { Link, Outlet, useLocation } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 
 export default function RootLayout() {
   const location = useLocation();
+  const { user } = useAuth();
+
+  const navigation = [
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Tracks", href: "/tracks" },
+    { label: "My Learning", href: "/my-learning" },
+    { label: "Certificates", href: "/certificates" },
+    ...(user?.is_superuser || user?.role === "admin"
+      ? [{ label: "Payments", href: "/admin/payments" }]
+      : []),
+  ];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">

@@ -1,4 +1,4 @@
-﻿export interface Resource {
+export interface Resource {
   id: number;
   module_id: number;
   title: string;
@@ -53,6 +53,9 @@ export interface Track {
   description: string | null;
   is_active: boolean;
   ordering: number;
+  price: number;
+  currency: string;
+  is_premium: boolean;
   modules?: TrackModule[];
 }
 
@@ -71,6 +74,9 @@ export interface TrackSummary {
   description: string | null;
   is_active: boolean;
   ordering: number;
+  price: number;
+  currency: string;
+  is_premium: boolean;
 }
 
 export interface TrackCurriculum extends Track {

@@ -12,6 +12,7 @@ import QuizTaker from "./pages/QuizTaker";
 import FinalProject from "./pages/FinalProject";
 import TrackDetail from "./pages/TrackDetail";
 import Tracks from "./pages/Tracks";
+import AdminPayments from "./pages/AdminPayments";
 import VerifyCertificate from "./pages/VerifyCertificate";
 
 function App() {
@@ -32,6 +33,7 @@ function App() {
               element={<FinalProject />}
             />
             <Route path="/my-learning" element={<MyLearning />} />
+            <Route path="/admin/payments" element={<AdminPayments />} />
             <Route path="/certificates" element={<MyCertificates />} />
             <Route
               path="/quizzes/:quizId/attempts/:attemptId"
