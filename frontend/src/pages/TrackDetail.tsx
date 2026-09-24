@@ -102,6 +102,8 @@ export default function TrackDetail() {
       ),
     [enrollments, numericTrackId],
   );
+  const hasCurriculumAccess = currentEnrollment?.status === "active";
+
 
   const totalLessons = useMemo(
     () =>
@@ -205,7 +207,7 @@ export default function TrackDetail() {
     if (
       !isValidTrackId ||
       !currentEnrollment ||
-      currentEnrollment.status === "cancelled"
+      currentEnrollment.status !== "active"
     ) {
       setAssignments([]);
       setAssignmentsError(null);
@@ -251,10 +253,7 @@ export default function TrackDetail() {
   }, [loadCurriculum, loadEnrollment]);
 
   useEffect(() => {
-    if (
-      currentEnrollment &&
-      currentEnrollment.status !== "cancelled"
-    ) {
+    if (hasCurriculumAccess && currentEnrollment) {
       void loadProgress(currentEnrollment.id);
       void loadAssignments();
     } else {
@@ -263,7 +262,7 @@ export default function TrackDetail() {
       setAssignments([]);
       setAssignmentsError(null);
     }
-  }, [currentEnrollment, loadAssignments, loadProgress]);
+  }, [currentEnrollment, hasCurriculumAccess, loadAssignments, loadProgress]);
 
   const handleEnrollmentCreated = (enrollment: Enrollment) => {
     setEnrollments((current) => [
@@ -275,7 +274,7 @@ export default function TrackDetail() {
   };
 
   const handleProgressAction = async (lessonId: number) => {
-    if (!currentEnrollment) {
+    if (!currentEnrollment || currentEnrollment.status !== "active") {
       return;
     }
 
@@ -334,7 +333,49 @@ export default function TrackDetail() {
   };
 
   if (isLoading) {
+    if (track && !isEnrollmentLoading && !hasCurriculumAccess) {
     return (
+      <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+        <section className="space-y-6">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-blue-600">
+              Track preview
+            </p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
+              {track.name}
+            </h1>
+            <p className="mt-4 max-w-3xl text-base leading-7 text-gray-600">
+              {track.description || "Build practical skills through a structured technical learning path."}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-6">
+            <h2 className="text-xl font-semibold text-slate-900">What you will learn</h2>
+            <ul className="mt-4 grid gap-3 text-sm leading-6 text-gray-600 md:grid-cols-2">
+              <li>Structured modules with practical technical lessons.</li>
+              <li>Hands-on exercises and track-specific problem solving.</li>
+              <li>Projects, assessments, and measurable learning progress.</li>
+              <li>Production-minded engineering skills aligned to the track.</li>
+            </ul>
+          </div>
+
+          {track.is_premium ? (
+            <PaymentCheckout
+              track={track}
+              enrollment={currentEnrollment}
+            />
+          ) : (
+            <EnrollmentPanel
+              trackId={numericTrackId}
+              enrollment={currentEnrollment}
+              onEnrollmentCreated={handleEnrollmentCreated}
+            />
+          )}
+        </section>
+      </div>
+    );
+  }
+  return (
       <div className="flex min-h-[calc(100vh-81px)] w-full items-center justify-center px-6 py-12">
         <div className="flex flex-col items-center text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-600">
@@ -467,21 +508,20 @@ export default function TrackDetail() {
               <PaymentCheckout
                 track={track}
                 enrollment={currentEnrollment}
-                onEnrollmentCreated={handleEnrollmentCreated}
               />
             ) : (
               <EnrollmentPanel
                 trackId={numericTrackId}
                 enrollment={currentEnrollment}
-                onEnrollmentCreated={handleEnrollmentCreated}
-              />
+              onEnrollmentCreated={handleEnrollmentCreated}
+            />
             )}
           </>
         )}
 
         {!isEnrollmentLoading &&
           currentEnrollment &&
-          currentEnrollment.status !== "cancelled" && (
+          currentEnrollment.status === "active" && (
             <Card className="border-blue-200 shadow-sm">
               <CardContent className="p-5 md:p-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

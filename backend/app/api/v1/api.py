@@ -3,11 +3,13 @@ from fastapi import APIRouter
 from app.api.v1 import (
     ai,
     assignments,
+    certificates,
     enrollments,
     final_projects,
     graduation,
     health,
     login,
+    payments,
     questions,
     quizzes,
     rag,
@@ -96,6 +98,12 @@ api_router.include_router(
 )
 
 api_router.include_router(
+    payments.router,
+    prefix="/payments",
+    tags=["payments"],
+)
+
+api_router.include_router(
     quizzes.attempt_router,
     prefix="/quiz-attempts",
     tags=["quiz-attempts"],
@@ -118,3 +126,5 @@ api_router.include_router(
     prefix="/graduation",
     tags=["graduation"],
 )
+
+api_router.include_router(certificates.router)

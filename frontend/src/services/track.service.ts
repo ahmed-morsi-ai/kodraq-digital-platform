@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   Lesson,
   LessonCreate,
   Resource,
@@ -14,20 +14,20 @@ import { api } from "./api";
 
 export const trackService = {
   async getActiveTracks(): Promise<TrackSummary[]> {
-    const response = await api.get<TrackSummary[]>("/tracks");
+    const response = await api.get<TrackSummary[]>("/api/v1/tracks");
     return response.data;
   },
 
   async getCurriculum(trackId: number): Promise<TrackCurriculum> {
     const response = await api.get<TrackCurriculum>(
-      `/tracks/${trackId}/curriculum`,
+      `/api/v1/tracks/${trackId}/curriculum`,
     );
 
     return response.data;
   },
 
   async createTrack(payload: TrackCreate): Promise<Track> {
-    const response = await api.post<Track>("/tracks", payload);
+    const response = await api.post<Track>("/api/v1/tracks", payload);
     return response.data;
   },
 
@@ -36,7 +36,7 @@ export const trackService = {
     payload: TrackModuleCreate,
   ): Promise<TrackModule> {
     const response = await api.post<TrackModule>(
-      `/tracks/${trackId}/modules`,
+      `/api/v1/tracks/${trackId}/modules`,
       payload,
     );
 
@@ -48,7 +48,7 @@ export const trackService = {
     payload: LessonCreate,
   ): Promise<Lesson> {
     const response = await api.post<Lesson>(
-      `/tracks/modules/${moduleId}/lessons`,
+      `/api/v1/tracks/modules/${moduleId}/lessons`,
       payload,
     );
 
@@ -60,7 +60,7 @@ export const trackService = {
     payload: ResourceCreate,
   ): Promise<Resource> {
     const response = await api.post<Resource>(
-      `/tracks/modules/${moduleId}/resources`,
+      `/api/v1/tracks/modules/${moduleId}/resources`,
       payload,
     );
 

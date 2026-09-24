@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   ProjectReview,
   ProjectReviewCreate,
   ProjectSubmission,
@@ -11,7 +11,7 @@ import { api } from "./api";
 export const finalProjectService = {
   async getByTrack(trackId: number): Promise<TrainingProject> {
     const response = await api.get<TrainingProject>(
-      `/tracks/${trackId}/final-project`,
+      `/api/v1/tracks/${trackId}/final-project`,
     );
 
     return response.data;
@@ -19,7 +19,7 @@ export const finalProjectService = {
 
   async getMySubmissions(): Promise<ProjectSubmission[]> {
     const response = await api.get<ProjectSubmission[]>(
-      "/final-projects/submissions/me",
+      "/api/v1/final-projects/submissions/me",
     );
 
     return response.data;
@@ -27,7 +27,7 @@ export const finalProjectService = {
 
   async getByProject(projectId: number): Promise<ProjectSubmission[]> {
     const response = await api.get<ProjectSubmission[]>(
-      `/final-projects/${projectId}/submissions`,
+      `/api/v1/final-projects/${projectId}/submissions`,
     );
 
     return response.data;
@@ -38,7 +38,7 @@ export const finalProjectService = {
     payload: ProjectSubmissionCreate,
   ): Promise<ProjectSubmission> {
     const response = await api.post<ProjectSubmission>(
-      `/final-projects/${projectId}/submissions`,
+      `/api/v1/final-projects/${projectId}/submissions`,
       payload,
     );
 
@@ -50,7 +50,7 @@ export const finalProjectService = {
     payload: ProjectSubmissionUpdate,
   ): Promise<ProjectSubmission> {
     const response = await api.patch<ProjectSubmission>(
-      `/final-projects/submissions/${submissionId}`,
+      `/api/v1/final-projects/submissions/${submissionId}`,
       payload,
     );
 
@@ -59,7 +59,7 @@ export const finalProjectService = {
 
   async getReviews(submissionId: number): Promise<ProjectReview[]> {
     const response = await api.get<ProjectReview[]>(
-      `/final-projects/submissions/${submissionId}/reviews`,
+      `/api/v1/final-projects/submissions/${submissionId}/reviews`,
     );
 
     return response.data;
@@ -70,7 +70,7 @@ export const finalProjectService = {
     payload: ProjectReviewCreate,
   ): Promise<ProjectReview> {
     const response = await api.post<ProjectReview>(
-      `/final-projects/submissions/${submissionId}/reviews`,
+      `/api/v1/final-projects/submissions/${submissionId}/reviews`,
       payload,
     );
 

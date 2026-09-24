@@ -127,10 +127,24 @@ def test_track_curriculum_endpoints_and_rbac(client, db_session):
 
     assert resource_response.status_code == status.HTTP_201_CREATED
 
-    curriculum = client.get(
+    unauthenticated_curriculum = client.get(
         f"/api/v1/tracks/{track_id}/curriculum"
     )
+    assert unauthenticated_curriculum.status_code == status.HTTP_401_UNAUTHORIZED
 
+    locked_curriculum = client.get(
+        f"/api/v1/tracks/{track_id}/curriculum",
+        headers=student_headers,
+    )
+    assert locked_curriculum.status_code == status.HTTP_200_OK
+    locked_data = locked_curriculum.json()
+    assert locked_data["id"] == track_id
+    assert locked_data["modules"] == []
+
+    curriculum = client.get(
+        f"/api/v1/tracks/{track_id}/curriculum",
+        headers=admin_headers,
+    )
     assert curriculum.status_code == status.HTTP_200_OK
     data = curriculum.json()
     assert data["id"] == track_id
@@ -378,3 +392,4 @@ def test_invalid_progress_lesson_is_rejected(client, db_session):
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "enrolled track" in response.json()["detail"].lower()
+

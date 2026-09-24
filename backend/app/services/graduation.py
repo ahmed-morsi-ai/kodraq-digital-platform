@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.assignment import Assignment
+from app.models.certificate import Certificate, GraduationResult
 from app.models.enrollment import Enrollment, StudentProgress
 from app.models.final_project import TrainingProject
 from app.models.project_submission import ProjectSubmission
@@ -72,9 +75,7 @@ def _curriculum_completion(
             StudentProgress.lesson_id.in_(lesson_ids),
         )
     ).all()
-    progress_by_lesson = {
-        lesson_id: progress for lesson_id, progress in progress_rows
-    }
+    progress_by_lesson = {lesson_id: progress for lesson_id, progress in progress_rows}
     total_progress = sum(
         progress_by_lesson.get(lesson_id, 0) for lesson_id in lesson_ids
     )
@@ -91,9 +92,7 @@ def _track_assignment_filter(track_id: int):
     return or_(
         Assignment.track_id == track_id,
         Assignment.module.has(TrackModule.track_id == track_id),
-        Assignment.lesson.has(
-            Lesson.module.has(TrackModule.track_id == track_id)
-        ),
+        Assignment.lesson.has(Lesson.module.has(TrackModule.track_id == track_id)),
     )
 
 
@@ -116,8 +115,7 @@ def _mandatory_assignment_score(
         return 100.0, {"total": 0, "passed": 0}
 
     passed = db.execute(
-        select(func.count(func.distinct(Submission.assignment_id)))
-        .where(
+        select(func.count(func.distinct(Submission.assignment_id))).where(
             Submission.user_id == user_id,
             Submission.assignment_id.in_(assignments),
             Submission.status == SubmissionStatus.APPROVED.value,
@@ -137,9 +135,7 @@ def _quiz_average(
 ) -> tuple[float, dict[str, Any]]:
     quiz_filter = or_(
         Quiz.track_id == track_id,
-        Quiz.lesson.has(
-            Lesson.module.has(TrackModule.track_id == track_id)
-        ),
+        Quiz.lesson.has(Lesson.module.has(TrackModule.track_id == track_id)),
     )
     quiz_ids = list(
         db.execute(
@@ -352,3 +348,84 @@ def calculate_graduation(
         status="GRADUATED" if eligible else "FAILED_GATES",
         gates=gates,
     )
+
+
+def generate_certificate_number() -> str:
+    return f"KODRAQ-{datetime.now(UTC):%Y}-{uuid4().hex[:12].upper()}"
+
+
+def build_certificate(
+    graduation_result: GraduationResult,
+    *,
+    certificate_number: str | None = None,
+    file_url: str | None = None,
+) -> Certificate:
+    if graduation_result.status != "GRADUATED":
+        raise ValueError("Certificate can only be issued for a GRADUATED result.")
+
+    if not graduation_result.student_id or not graduation_result.track_id:
+        raise ValueError("Graduation result must identify a student and track.")
+
+    return Certificate(
+        student_id=graduation_result.student_id,
+        track_id=graduation_result.track_id,
+        graduation_result_id=graduation_result.id,
+        certificate_number=certificate_number or generate_certificate_number(),
+        final_score=graduation_result.overall_score,
+        status="ISSUED",
+        file_url=file_url,
+    )
+
+
+def issue_certificate(
+    db: Session,
+    *,
+    graduation_result_id: int,
+    certificate_number: str | None = None,
+    file_url: str | None = None,
+) -> Certificate:
+    result = db.scalar(
+        select(GraduationResult).where(GraduationResult.id == graduation_result_id)
+    )
+    if result is None:
+        raise ValueError("Graduation result not found.")
+
+    existing = db.scalar(
+        select(Certificate).where(
+            Certificate.graduation_result_id == graduation_result_id
+        )
+    )
+    if existing is not None:
+        return existing
+
+    certificate = build_certificate(
+        result,
+        certificate_number=certificate_number,
+        file_url=file_url,
+    )
+    db.add(certificate)
+    db.commit()
+    db.refresh(certificate)
+    return certificate
+
+
+def list_student_certificates(
+    db: Session,
+    *,
+    student_id: int,
+) -> list[Certificate]:
+    return list(
+        db.scalars(
+            select(Certificate)
+            .where(Certificate.student_id == student_id)
+            .order_by(Certificate.id.desc())
+        ).all()
+    )
+
+
+def get_certificate(
+    db: Session,
+    *,
+    certificate_id: int,
+) -> Certificate | None:
+    return db.scalar(select(Certificate).where(Certificate.id == certificate_id))

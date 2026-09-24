@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from app.models.enrollment import Enrollment
     from app.models.final_project import ProjectReview
     from app.models.graduation import GraduationEvaluation
+    from app.models.payment import Payment
     from app.models.project_submission import ProjectSubmission
     from app.models.quiz_attempt import QuizAttempt
     from app.models.role import Role
@@ -87,6 +88,11 @@ class User(Base, TimestampMixin):
     )
     ai_request_logs: Mapped[list[AIRequestLog]] = relationship(
         "AIRequestLog",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    payments: Mapped[list[Payment]] = relationship(
+        "Payment",
         back_populates="user",
         cascade="all, delete-orphan",
     )

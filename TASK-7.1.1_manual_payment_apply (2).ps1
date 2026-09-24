@@ -1,0 +1,378 @@
+# TASK-7.1.1 — Monetization Models & Manual Paywall Logic
+# Never commits or pushes.
+
+$ErrorActionPreference = "Stop"
+
+$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$backendRoot = Join-Path $repoRoot "backend"
+if (-not (Test-Path $backendRoot)) { throw "Missing backend directory: $backendRoot" }
+Set-Location $repoRoot
+
+function Write-Utf8NoBom([string]$Path, [string]$Content) {
+    $enc = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Content, $enc)
+}
+
+function Require-Contains([string]$Path, [string]$Needle, [string]$Description) {
+    if (-not (Test-Path $Path)) { throw "Audit failed: missing $Description at $Path" }
+    $content = Get-Content $Path -Raw
+    if ($content -notmatch [regex]::Escape($Needle)) {
+        throw "Audit failed: expected '$Needle' in $Description"
+    }
+}
+
+function Run-Step([string]$Label, [scriptblock]$Command) {
+    Write-Host "`n===== $Label =====" -ForegroundColor Cyan
+    & $Command
+    if ($LASTEXITCODE -ne 0) { throw "$Label failed with exit code $LASTEXITCODE" }
+}
+
+# 0) Audit before write.
+Write-Host "===== TASK-7.1.1 AUDIT =====" -ForegroundColor Cyan
+
+$trackPath = Join-Path $backendRoot "app\models\track.py"
+$enrollmentPath = Join-Path $backendRoot "app\models\enrollment.py"
+$crudEnrollmentPath = Join-Path $backendRoot "app\crud\crud_enrollment.py"
+$apiPath = Join-Path $backendRoot "app\api\v1\api.py"
+$modelsInitPath = Join-Path $backendRoot "app\models\__init__.py"
+$userModelPath = Join-Path $backendRoot "app\models\user.py"
+$paymentPath = Join-Path $backendRoot "app\models\payment.py"
+$paymentsApiPath = Join-Path $backendRoot "app\api\v1\payments.py"
+$targetTestPath = Join-Path $backendRoot "tests\unit\test_payment_models.py"
+
+Require-Contains $trackPath 'class Track(Base, TimestampMixin):' 'Track model'
+Require-Contains $enrollmentPath 'class Enrollment(Base, TimestampMixin):' 'Enrollment model'
+Require-Contains $crudEnrollmentPath 'def create_for_user(' 'enrollment CRUD'
+Require-Contains $apiPath 'enrollments.router' 'enrollment API registration'
+Require-Contains $modelsInitPath 'from app.models.track import' 'model registry'
+Require-Contains $userModelPath 'class User(Base, TimestampMixin):' 'User model'
+
+$headBefore = (git rev-parse HEAD).Trim()
+Write-Host "Git HEAD before: $headBefore"
+Write-Host "Audit PASS: Track/Enrollment/model registry/enrollment CRUD/API router found." -ForegroundColor Green
+
+# 1) Track pricing fields.
+$track = Get-Content $trackPath -Raw
+$track = $track.Replace(
+    'from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text',
+    'from sqlalchemy import Boolean, Column, ForeignKey, Integer, Numeric, String, Text'
+)
+
+if ($track -notmatch 'price\s*=\s*Column\(Numeric') {
+    $pricing = @'
+    # TASK-7.1.1 monetization
+    price = Column(Numeric(12, 2), default=0.0, nullable=False)
+    currency = Column(String(3), default="EGP", nullable=False)
+    is_premium = Column(Boolean, default=False, nullable=False)
+
+'@
+    $orderingLine = '    ordering = Column(Integer, default=0, nullable=False)'
+    $track = $track.Replace(
+        $orderingLine + "`r`n",
+        $orderingLine + "`r`n" + $pricing
+    )
+}
+if ($track -notmatch 'payments\s*=\s*relationship\("Payment"') {
+    $track = $track.Replace(
+        '    modules = relationship(',
+        '    payments = relationship("Payment", back_populates="track", cascade="all, delete-orphan")' + "`r`n`r`n" +
+        '    modules = relationship('
+    )
+}
+Write-Utf8NoBom $trackPath $track
+
+# 2) Payment model.
+$paymentModel = @'
+from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, Numeric, String
+from sqlalchemy.orm import relationship
+
+from app.models.base import Base, TimestampMixin
+
+
+class Payment(Base, TimestampMixin):
+    __tablename__ = "payments"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING_VERIFICATION', 'VERIFIED', 'REJECTED')",
+            name="ck_payments_status",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    track_id = Column(
+        Integer,
+        ForeignKey("tracks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    amount = Column(Numeric(12, 2), nullable=False)
+    currency = Column(String(3), default="EGP", nullable=False)
+    status = Column(String(32), default="PENDING_VERIFICATION", nullable=False)
+    payment_method = Column(String(32), nullable=False)
+    receipt_url = Column(String(1024), nullable=False)
+    rejection_reason = Column(String(512), nullable=True)
+
+    user = relationship("User", back_populates="payments")
+    track = relationship("Track", back_populates="payments")
+'@
+Write-Utf8NoBom $paymentPath $paymentModel
+
+# 3) User payment relationship.
+$user = Get-Content $userModelPath -Raw
+if ($user -notmatch 'from app\.models\.payment import Payment') {
+    $user = $user.Replace(
+        '    from app.models.ai import AIRequestLog' + "`r`n",
+        '    from app.models.ai import AIRequestLog' + "`r`n" +
+        '    from app.models.payment import Payment' + "`r`n"
+    )
+}
+if ($user -notmatch 'payments:\s*Mapped\[list\[Payment\]\]') {
+    $rel = @'
+    payments: Mapped[list[Payment]] = relationship(
+        "Payment",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+'@
+    $user = $user.Replace(
+        '    enrollments: Mapped[list[Enrollment]] = relationship(',
+        $rel + "`r`n" + '    enrollments: Mapped[list[Enrollment]] = relationship('
+    )
+}
+Write-Utf8NoBom $userModelPath $user
+
+# 4) Register Payment model.
+$modelsInit = Get-Content $modelsInitPath -Raw
+if ($modelsInit -notmatch 'from app\.models\.payment import Payment') {
+    $modelsInit = $modelsInit.Replace(
+        'from app.models.knowledge import ',
+        'from app.models.payment import Payment' + "`r`n" +
+        'from app.models.knowledge import '
+    )
+}
+if ($modelsInit -notmatch '"Payment",') {
+    $modelsInit = $modelsInit.Replace(
+        '    "KnowledgeDocument",' + "`r`n",
+        '    "Payment",' + "`r`n" + '    "KnowledgeDocument",' + "`r`n"
+    )
+}
+Write-Utf8NoBom $modelsInitPath $modelsInit
+
+# 5) Premium enrollment gate at CRUD boundary.
+$crud = Get-Content $crudEnrollmentPath -Raw
+if ($crud -notmatch 'from app\.models\.track import Track') {
+    $crud = $crud.Replace(
+        'from app.models.enrollment import Enrollment, StudentProgress' + "`r`n",
+        'from app.models.enrollment import Enrollment, StudentProgress' + "`r`n" +
+        'from app.models.track import Track' + "`r`n"
+    )
+}
+$oldBlock = @'
+        db_obj = Enrollment(
+            user_id=user_id,
+            track_id=obj_in.track_id,
+            status=obj_in.status,
+        )
+'@
+$newBlock = @'
+        track = db.get(Track, obj_in.track_id)
+        enrollment_status = (
+            "pending_payment"
+            if track is not None and track.is_premium
+            else obj_in.status
+        )
+
+        db_obj = Enrollment(
+            user_id=user_id,
+            track_id=obj_in.track_id,
+            status=enrollment_status,
+        )
+'@
+if ($crud -notmatch 'enrollment_status\s*=\s*\(\s*"pending_payment"') {
+    if ($crud -notmatch [regex]::Escape($oldBlock)) {
+        throw "Expected create_for_user block not found in crud_enrollment.py"
+    }
+    $crud = $crud.Replace($oldBlock, $newBlock)
+}
+Write-Utf8NoBom $crudEnrollmentPath $crud
+
+# 6) Payment instructions endpoint.
+$paymentsApi = @'
+from fastapi import APIRouter
+
+router = APIRouter()
+
+PAYMENT_INSTRUCTIONS = {
+    "vodafone_cash": "01140225360",
+    "instapay": "ahmed_morsi2672@instapay",
+}
+
+
+@router.get("/instructions")
+def get_payment_instructions() -> dict[str, str]:
+    return PAYMENT_INSTRUCTIONS.copy()
+'@
+Write-Utf8NoBom $paymentsApiPath $paymentsApi
+
+# 7) Register payment router.
+$api = Get-Content $apiPath -Raw
+if ($api -notmatch '(?m)^\s+payments,\s*$') {
+    $api = $api.Replace(
+        '    login,' + "`r`n",
+        '    login,' + "`r`n" + '    payments,' + "`r`n"
+    )
+}
+if ($api -notmatch 'payments\.router') {
+    $api += @'
+
+api_router.include_router(
+    payments.router,
+    prefix="/payments",
+    tags=["payments"],
+)
+'@
+}
+Write-Utf8NoBom $apiPath $api
+
+# 8) Targeted tests.
+$testContent = @'
+from decimal import Decimal
+
+from app.crud.crud_enrollment import enrollment as crud_enrollment
+from app.models.enrollment import Enrollment
+from app.models.payment import Payment
+from app.models.track import Track
+from app.models.user import User
+from app.schemas.enrollment import EnrollmentCreate
+
+
+def _create_user(db_session, suffix: str) -> User:
+    user = User(
+        email=f"payment-test-{suffix}@example.com",
+        hashed_password="test-hash",
+        full_name="Payment Test User",
+        is_active=True,
+        is_superuser=False,
+    )
+    db_session.add(user)
+    db_session.flush()
+    return user
+
+
+def _create_track(db_session, *, premium: bool, suffix: str) -> Track:
+    track = Track(
+        name=f"Payment Test Track {suffix}",
+        slug=f"payment-test-track-{suffix}",
+        description="TASK-7.1.1 test track",
+        is_active=True,
+        ordering=0,
+        price=Decimal("1500.00"),
+        currency="EGP",
+        is_premium=premium,
+    )
+    db_session.add(track)
+    db_session.flush()
+    return track
+
+
+def test_payment_record_creation(db_session):
+    user = _create_user(db_session, "record")
+    track = _create_track(db_session, premium=True, suffix="record")
+
+    payment = Payment(
+        user_id=user.id,
+        track_id=track.id,
+        amount=Decimal("1500.00"),
+        currency="EGP",
+        payment_method="INSTAPAY",
+        receipt_url="/uploads/receipts/payment-test.png",
+    )
+    db_session.add(payment)
+    db_session.flush()
+
+    assert payment.id is not None
+    assert payment.status == "PENDING_VERIFICATION"
+    assert payment.amount == Decimal("1500.00")
+    assert payment.currency == "EGP"
+    assert payment.receipt_url.endswith("payment-test.png")
+
+
+def test_premium_track_creates_blocked_enrollment(db_session):
+    user = _create_user(db_session, "premium")
+    track = _create_track(db_session, premium=True, suffix="premium")
+
+    enrollment = crud_enrollment.create_for_user(
+        db_session,
+        user_id=user.id,
+        obj_in=EnrollmentCreate(track_id=track.id, status="active"),
+    )
+
+    assert isinstance(enrollment, Enrollment)
+    assert enrollment.status == "pending_payment"
+
+
+def test_free_track_remains_active(db_session):
+    user = _create_user(db_session, "free")
+    track = _create_track(db_session, premium=False, suffix="free")
+
+    enrollment = crud_enrollment.create_for_user(
+        db_session,
+        user_id=user.id,
+        obj_in=EnrollmentCreate(track_id=track.id, status="active"),
+    )
+
+    assert enrollment.status == "active"
+
+
+def test_payment_instructions_endpoint(client):
+    response = client.get("/api/v1/payments/instructions")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "vodafone_cash": "01140225360",
+        "instapay": "ahmed_morsi2672@instapay",
+    }
+'@
+Write-Utf8NoBom $targetTestPath $testContent
+
+# 9) Migrate + verify.
+Set-Location $backendRoot
+
+Run-Step "ALEMBIC AUTOGENERATE" {
+    python -m alembic revision --autogenerate -m "add track pricing and manual payments"
+}
+Run-Step "ALEMBIC UPGRADE HEAD" {
+    python -m alembic upgrade head
+}
+Run-Step "TARGETED PYTEST" {
+    python -m pytest tests/unit/test_payment_models.py -ra -q
+}
+Run-Step "FULL PYTEST REGRESSION" {
+    python -m pytest -ra -q
+}
+Run-Step "RUFF" {
+    python -m ruff check app tests
+}
+
+Set-Location $repoRoot
+$headAfter = (git rev-parse HEAD).Trim()
+
+Write-Host "`n===== TASK-7.1.1 FINAL EVIDENCE =====" -ForegroundColor Cyan
+Write-Host "ALEMBIC upgrade head: PASS" -ForegroundColor Green
+Write-Host "Targeted pytest: PASS" -ForegroundColor Green
+Write-Host "Full pytest regression: PASS" -ForegroundColor Green
+Write-Host "Ruff: PASS" -ForegroundColor Green
+Write-Host "Git HEAD before: $headBefore"
+Write-Host "Git HEAD after : $headAfter"
+
+if ($headBefore -ne $headAfter) {
+    throw "Git HEAD changed unexpectedly. No commit was authorized."
+}
+Write-Host "Git HEAD unchanged: PASS (no commit created)." -ForegroundColor Green
+Write-Host "`nTASK-7.1.1 completed successfully; changes remain uncommitted." -ForegroundColor Green

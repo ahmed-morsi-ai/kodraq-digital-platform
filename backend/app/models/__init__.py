@@ -9,6 +9,7 @@ from app.models.graduation import (
     GraduationGateCheck,
 )
 from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
+from app.models.payment import Payment
 from app.models.project_submission import (
     ProjectSubmission,
     ProjectSubmissionStatus,
@@ -62,4 +63,18 @@ __all__ = [
     "GraduationEvaluationStatus",
     "KnowledgeDocument",
     "KnowledgeChunk",
+    "Payment",
 ]
+
+from app.models.certificate import (
+    Certificate as Certificate,
+)
+from app.models.certificate import (
+    GraduationCheck as GraduationCheck,
+)
+from app.models.certificate import (
+    GraduationResult as GraduationResult,
+)
+from app.models.certificate import (
+    GraduationRule as GraduationRule,
+)

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Annotated
 
@@ -20,7 +20,8 @@ from app.crud.crud_enrollment import (
 )
 from app.crud.crud_track import track as crud_track
 from app.models.enrollment import Enrollment
-from app.models.track import Lesson
+from app.models.payment import Payment
+from app.models.track import Lesson, Track
 from app.models.user import User as UserModel
 from app.schemas.enrollment import (
     EnrollmentCreate,
@@ -66,9 +67,20 @@ def create_enrollment(
     enrollment_in: EnrollmentCreate,
     current_user: CurrentUserDep,
 ) -> Enrollment:
+    track = session.get(Track, enrollment_in.track_id)
+    if track is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Track not found.",
+        )
+
+    target_status = "pending_payment" if track.is_premium else "active"
+    enrollment_payload = enrollment_in.model_copy(
+        update={"status": target_status},
+    )
     track = crud_track.get(
         session,
-        id=enrollment_in.track_id,
+        id=enrollment_payload.track_id,
     )
 
     if not track or not track.is_active:
@@ -80,7 +92,7 @@ def create_enrollment(
     existing = crud_enrollment.get_by_user_and_track(
         session,
         user_id=current_user.id,
-        track_id=enrollment_in.track_id,
+        track_id=enrollment_payload.track_id,
     )
 
     if existing:
@@ -93,7 +105,7 @@ def create_enrollment(
         created = crud_enrollment.create_for_user(
             session,
             user_id=current_user.id,
-            obj_in=enrollment_in,
+            obj_in=enrollment_payload,
         )
     except IntegrityError:
         session.rollback()
@@ -227,6 +239,28 @@ def update_enrollment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Enrollment not found",
         )
+
+    if enrollment_in.status == "active":
+        track = crud_track.get(session, id=enrollment.track_id)
+        if track and track.is_premium:
+            verified_payment = session.execute(
+                select(Payment.id)
+                .where(
+                    Payment.user_id == enrollment.user_id,
+                    Payment.track_id == enrollment.track_id,
+                    Payment.status == "VERIFIED",
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+
+            if verified_payment is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "Premium enrollment cannot be activated until "
+                        "a related payment is verified."
+                    ),
+                )
 
     updated = crud_enrollment.update(
         session,

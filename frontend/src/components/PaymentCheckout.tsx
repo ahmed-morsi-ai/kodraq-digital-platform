@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { enrollmentService } from "@/services/enrollment.service";
 import { paymentService } from "@/services/payment.service";
 import type { Enrollment } from "@/types/enrollment";
 import type { PaymentInstructions } from "@/types/payment";
@@ -28,7 +27,6 @@ import type { TrackCurriculum } from "@/types/track";
 interface PaymentCheckoutProps {
   track: TrackCurriculum;
   enrollment?: Enrollment;
-  onEnrollmentCreated: (enrollment: Enrollment) => void;
 }
 
 function getApiErrorMessage(error: unknown): string {
@@ -51,7 +49,6 @@ function formatAmount(amount: number, currency: string): string {
 export default function PaymentCheckout({
   track,
   enrollment,
-  onEnrollmentCreated,
 }: PaymentCheckoutProps) {
   const [instructions, setInstructions] = useState<PaymentInstructions | null>(null);
   const [method, setMethod] = useState("VODAFONE_CASH");
@@ -59,7 +56,6 @@ export default function PaymentCheckout({
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(
     enrollment?.status === "pending_payment",
   );
-  const [isEnrollmentSubmitting, setIsEnrollmentSubmitting] = useState(false);
   const [isPaymentSubmitting, setIsPaymentSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -103,25 +99,6 @@ export default function PaymentCheckout({
   if (!track.is_premium || isAlreadyEnrolled) {
     return null;
   }
-
-  async function handleStartCheckout() {
-    setError(null);
-    setSuccess(false);
-    setIsEnrollmentSubmitting(true);
-
-    try {
-      const created = await enrollmentService.enroll({
-        track_id: track.id,
-      });
-      onEnrollmentCreated(created);
-      setIsCheckoutOpen(true);
-    } catch (requestError) {
-      setError(getApiErrorMessage(requestError));
-    } finally {
-      setIsEnrollmentSubmitting(false);
-    }
-  }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -169,6 +146,11 @@ export default function PaymentCheckout({
         </CardHeader>
 
         <CardContent className="space-y-6">
+          {hasPendingPayment && (
+            <div className="rounded-xl border border-amber-200 bg-amber-100/60 px-4 py-3 text-sm font-semibold text-amber-900">
+              Payment Pending Admin Approval
+            </div>
+          )}
           <div className="grid gap-4 md:grid-cols-3">
             <div className="rounded-xl border border-gray-200 bg-white p-4 md:col-span-1">
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
@@ -300,21 +282,15 @@ export default function PaymentCheckout({
         )}
         <Button
           type="button"
-          disabled={isEnrollmentSubmitting}
-          onClick={() => void handleStartCheckout()}
+          onClick={() => {
+            setError(null);
+            setSuccess(false);
+            setIsCheckoutOpen(true);
+          }}
           className="w-full gap-2 bg-blue-600 text-white hover:bg-blue-700"
         >
-          {isEnrollmentSubmitting ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Starting checkout...
-            </>
-          ) : (
-            <>
-              <CreditCard className="h-4 w-4" />
-              Enroll & pay
-            </>
-          )}
+          <CreditCard className="h-4 w-4" />
+          Continue to payment
         </Button>
       </CardContent>
     </Card>

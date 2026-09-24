@@ -1,4 +1,4 @@
-﻿import { api } from "./api";
+import { api } from "./api";
 import type {
   Enrollment,
   EnrollmentCreate,
@@ -13,25 +13,25 @@ import type {
 
 export const enrollmentService = {
   async enroll(payload: EnrollmentCreate): Promise<Enrollment> {
-    const response = await api.post<Enrollment>("/enrollments", payload);
+    const response = await api.post<Enrollment>("/api/v1/enrollments", payload);
     return response.data;
   },
 
   async getMyEnrollments(): Promise<Enrollment[]> {
-    const response = await api.get<Enrollment[]>("/enrollments/me");
+    const response = await api.get<Enrollment[]>("/api/v1/enrollments/me");
     return response.data;
   },
 
   async getEnrollment(enrollmentId: number): Promise<EnrollmentDetail> {
     const response = await api.get<EnrollmentDetail>(
-      `/enrollments/${enrollmentId}`,
+      `/api/v1/enrollments/${enrollmentId}`,
     );
     return response.data;
   },
 
   async getTrackEnrollments(trackId: number): Promise<Enrollment[]> {
     const response = await api.get<Enrollment[]>(
-      `/enrollments/track/${trackId}`,
+      `/api/v1/enrollments/track/${trackId}`,
     );
     return response.data;
   },
@@ -41,7 +41,7 @@ export const enrollmentService = {
     payload: EnrollmentUpdate,
   ): Promise<Enrollment> {
     const response = await api.patch<Enrollment>(
-      `/enrollments/${enrollmentId}`,
+      `/api/v1/enrollments/${enrollmentId}`,
       payload,
     );
     return response.data;
@@ -49,7 +49,7 @@ export const enrollmentService = {
 
   async getProgress(enrollmentId: number): Promise<LessonProgress[]> {
     const response = await api.get<LessonProgress[]>(
-      `/enrollments/${enrollmentId}/progress`,
+      `/api/v1/enrollments/${enrollmentId}/progress`,
     );
     return response.data;
   },
@@ -59,7 +59,7 @@ export const enrollmentService = {
     payload: ProgressCreatePayload,
   ): Promise<LessonProgress> {
     const response = await api.post<LessonProgress>(
-      `/enrollments/${enrollmentId}/progress`,
+      `/api/v1/enrollments/${enrollmentId}/progress`,
       payload,
     );
     return response.data;
@@ -71,7 +71,7 @@ export const enrollmentService = {
     payload: ProgressUpdatePayload,
   ): Promise<LessonProgress> {
     const response = await api.patch<LessonProgress>(
-      `/enrollments/${enrollmentId}/progress/${progressId}`,
+      `/api/v1/enrollments/${enrollmentId}/progress/${progressId}`,
       payload,
     );
     return response.data;

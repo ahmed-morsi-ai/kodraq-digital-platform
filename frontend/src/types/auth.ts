@@ -9,7 +9,13 @@ export interface User {
 }
 
 export interface LoginCredentials {
-  username: string; // The backend OAuth2 expects 'username' (which we map to email)
+  username: string;
+  password: string;
+}
+
+export interface RegistrationPayload {
+  email: string;
+  full_name: string;
   password: string;
 }
 

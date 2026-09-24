@@ -7,7 +7,7 @@ import type {
 
 export const paymentService = {
   async getInstructions(): Promise<PaymentInstructions> {
-    const response = await api.get<PaymentInstructions>("/payments/instructions");
+    const response = await api.get<PaymentInstructions>("/api/v1/payments/instructions");
     return response.data;
   },
 
@@ -21,7 +21,7 @@ export const paymentService = {
     formData.append("payment_method", method);
     formData.append("receipt", receiptFile);
 
-    const response = await api.post<Payment>("/payments/submit", formData, {
+    const response = await api.post<Payment>("/api/v1/payments/submit", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
       },
@@ -31,12 +31,12 @@ export const paymentService = {
   },
 
   async getMyPayments(): Promise<Payment[]> {
-    const response = await api.get<Payment[]>("/payments/me");
+    const response = await api.get<Payment[]>("/api/v1/payments/me");
     return response.data;
   },
 
   async getAdminPayments(): Promise<Payment[]> {
-    const response = await api.get<Payment[]>("/payments", {
+    const response = await api.get<Payment[]>("/api/v1/payments", {
       params: { status: "PENDING_VERIFICATION" },
     });
     return response.data;
@@ -54,7 +54,7 @@ export const paymentService = {
     };
 
     const response = await api.patch<Payment>(
-      `/payments/${paymentId}/verify`,
+      `/api/v1/payments/${paymentId}/verify`,
       payload,
     );
     return response.data;

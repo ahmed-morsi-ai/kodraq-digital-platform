@@ -4,6 +4,7 @@ import RootLayout from "./layouts/RootLayout";
 import Dashboard from "./pages/Dashboard";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
+import Register from "./pages/Register";
 import MyLearning from "./pages/MyLearning";
 import MyCertificates from "./pages/MyCertificates";
 import NotFound from "./pages/NotFound";
@@ -21,6 +22,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
         <Route path="/verify/:code" element={<VerifyCertificate />} />
 
         <Route element={<ProtectedRoute />}>

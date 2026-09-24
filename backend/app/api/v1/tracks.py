@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Annotated
 
@@ -26,6 +26,7 @@ from app.crud.crud_track import (
 from app.crud.crud_track_assignment_config import (
     track_assignment_config as crud_track_assignment_config,
 )
+from app.models.enrollment import Enrollment
 from app.models.track import Track
 from app.models.track_assignment_config import TrackAssignmentConfig
 from app.models.user import User as UserModel
@@ -82,6 +83,7 @@ def read_tracks(
 def read_track_curriculum(
     track_id: int,
     session: SessionDep,
+    current_user: CurrentUserDep,
 ) -> Track:
     track = crud_track.get_with_curriculum(
         session,
@@ -93,10 +95,19 @@ def read_track_curriculum(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Track not found",
         )
+    enrollment = session.scalar(
+        select(Enrollment).where(
+            Enrollment.user_id == current_user.id,
+            Enrollment.track_id == track_id,
+        )
+    )
+    track_payload = TrackCurriculum.model_validate(track, from_attributes=True)
+    if not current_user.is_superuser and (
+        enrollment is None or enrollment.status != "active"
+    ):
+        track_payload = track_payload.model_copy(update={"modules": []})
 
-    return track
-
-
+    return track_payload
 @router.get(
     "/{track_id}/assignment-config/",
     response_model=TrackAssignmentConfigResponse,

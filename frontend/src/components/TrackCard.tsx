@@ -1,4 +1,4 @@
-﻿import {
+import {
   ArrowRight,
   BookOpen,
   CheckCircle2,

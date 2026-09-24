@@ -11,7 +11,7 @@ export const quizService = {
     trackId?: number;
     lessonId?: number;
   }): Promise<StudentQuiz[]> {
-    const response = await api.get<StudentQuiz[]>("/quizzes", {
+    const response = await api.get<StudentQuiz[]>("/api/v1/quizzes", {
       params: {
         track_id: params.trackId,
         lesson_id: params.lessonId,
@@ -22,20 +22,20 @@ export const quizService = {
   },
 
   async getQuiz(quizId: number): Promise<StudentQuiz> {
-    const response = await api.get<StudentQuiz>(`/quizzes/${quizId}`);
+    const response = await api.get<StudentQuiz>(`/api/v1/quizzes/${quizId}`);
     return response.data;
   },
 
   async startAttempt(quizId: number): Promise<QuizAttempt> {
     const response = await api.post<QuizAttempt>(
-      `/quizzes/${quizId}/attempts`,
+      `/api/v1/quizzes/${quizId}/attempts`,
     );
     return response.data;
   },
 
   async getAttempt(attemptId: number): Promise<QuizAttempt> {
     const response = await api.get<QuizAttempt>(
-      `/quiz-attempts/${attemptId}`,
+      `/api/v1/quiz-attempts/${attemptId}`,
     );
     return response.data;
   },
@@ -45,7 +45,7 @@ export const quizService = {
     payload: QuizAttemptSubmit,
   ): Promise<QuizAttempt> {
     const response = await api.post<QuizAttempt>(
-      `/quiz-attempts/${attemptId}/submit`,
+      `/api/v1/quiz-attempts/${attemptId}/submit`,
       payload,
     );
     return response.data;
@@ -53,7 +53,7 @@ export const quizService = {
 
   async getResult(attemptId: number): Promise<QuizResult> {
     const response = await api.get<QuizResult>(
-      `/quiz-attempts/${attemptId}/results`,
+      `/api/v1/quiz-attempts/${attemptId}/results`,
     );
     return response.data;
   },

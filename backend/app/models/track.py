@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base, TimestampMixin
@@ -14,6 +14,18 @@ class Track(Base, TimestampMixin):
     is_active = Column(Boolean, default=True, nullable=False)
     ordering = Column(Integer, default=0, nullable=False)
 
+    price = Column(Numeric(12, 2), default=0.0, nullable=False)
+    currency = Column(String(3), default="EGP", nullable=False)
+    is_premium = Column(Boolean, default=False, nullable=False)
+
+    # TASK-7.1.1 monetization
+
+
+    payments = relationship(
+        "Payment",
+        back_populates="track",
+        cascade="all, delete-orphan",
+    )
     modules = relationship(
         "TrackModule",
         back_populates="track",
@@ -75,6 +87,7 @@ class TrackModule(Base, TimestampMixin):
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     ordering = Column(Integer, default=0, nullable=False)
+    # TASK-7.1.1 monetization
     is_active = Column(Boolean, default=True, nullable=False)
 
     track = relationship("Track", back_populates="modules")
@@ -105,6 +118,7 @@ class Lesson(Base, TimestampMixin):
     content = Column(Text, nullable=True)
     video_url = Column(String(512), nullable=True)
     ordering = Column(Integer, default=0, nullable=False)
+    # TASK-7.1.1 monetization
 
     module = relationship("TrackModule", back_populates="lessons")
     student_progress = relationship(
