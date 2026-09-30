@@ -5,6 +5,8 @@ import { ArrowLeft, UserRound, X } from "lucide-react";
 
 import AuthToast from "@/components/AuthToast";
 import { AuthService } from "@/services/auth.service";
+import { useAuth } from "@/context/AuthContext";
+import { getDashboardPath } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -44,17 +46,17 @@ export default function Register() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState<"student" | "client">("student");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [errorToast, setErrorToast] = useState<string | null>(null);
-  const [successToast, setSuccessToast] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setErrorToast(null);
-    setSuccessToast(null);
 
     if (password.length < 8) {
       setErrorToast("Password must be at least 8 characters.");
@@ -73,15 +75,14 @@ export default function Register() {
         email: email.trim(),
         full_name: fullName.trim(),
         password,
+        role,
       });
-
-      setSuccessToast(
-        "Account created successfully. Redirecting you to sign in...",
-      );
-
-      window.setTimeout(() => {
+      try {
+        const user = await login({ username: email.trim(), password });
+        navigate(getDashboardPath(user), { replace: true });
+      } catch {
         navigate("/login?registered=1", { replace: true });
-      }, 900);
+      }
     } catch (requestError) {
       if (isAxiosError(requestError)) {
         console.error(
@@ -102,14 +103,6 @@ export default function Register() {
 
   return (
     <div className="min-h-screen bg-[#f8fbff] px-4 py-8 text-slate-900 sm:px-6">
-      {successToast && (
-        <AuthToast
-          kind="success"
-          message={successToast}
-          onClose={() => setSuccessToast(null)}
-        />
-      )}
-
       {errorToast && (
         <AuthToast
           kind="error"
@@ -186,6 +179,21 @@ export default function Register() {
                   required
                   className="h-11 border-slate-200 bg-white"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="account_role">Account type</Label>
+                <select
+                  id="account_role"
+                  value={role}
+                  onChange={(event) =>
+                    setRole(event.target.value as "student" | "client")
+                  }
+                  className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900"
+                >
+                  <option value="student">Student</option>
+                  <option value="client">Client</option>
+                </select>
               </div>
 
               <div className="grid gap-5 sm:grid-cols-2">

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash, verify_password
 from app.crud.base import CRUDBase
+from app.models.role import Role
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
 
@@ -17,13 +18,25 @@ class CRUDUser(CRUDBase[User, UserCreate, UserUpdate]):
         return db.execute(stmt).scalar_one_or_none()
 
     def create(self, db: Session, *, obj_in: UserCreate) -> User:
+        role = (
+            db.get(Role, obj_in.role_id)
+            if obj_in.role_id is not None
+            else db.scalar(select(Role).where(Role.name == obj_in.role))
+        )
+        if role is None:
+            if obj_in.role_id is not None:
+                raise ValueError(f"Role {obj_in.role_id} does not exist")
+            role = Role(name=obj_in.role)
+            db.add(role)
+            db.flush()
+
         db_obj = User(
             email=obj_in.email,
             full_name=obj_in.full_name,
             hashed_password=get_password_hash(obj_in.password),
             is_active=obj_in.is_active,
             is_superuser=obj_in.is_superuser,
-            role_id=obj_in.role_id,
+            role_id=role.id,
         )
         db.add(db_obj)
         db.commit()
@@ -36,7 +49,7 @@ class CRUDUser(CRUDBase[User, UserCreate, UserUpdate]):
         if isinstance(obj_in, dict):
             update_data = obj_in
         else:
-            update_data = obj_in.model_dump(exclude_unset=True)
+            update_data = obj_in.model_dump(exclude_unset=True, exclude_none=True)
 
         if "password" in update_data and update_data["password"]:
             hashed_password = get_password_hash(update_data["password"])

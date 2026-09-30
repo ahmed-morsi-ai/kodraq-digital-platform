@@ -11,7 +11,7 @@ from app.api.deps import (
 )
 from app.crud.crud_user import user as crud_user
 from app.models.user import User as UserModel
-from app.schemas.user import User, UserCreate, UserUpdate
+from app.schemas.user import User, UserCreate, UserRegistration, UserUpdate
 
 router = APIRouter()
 
@@ -29,7 +29,7 @@ CurrentSuperuserDep = Annotated[
 @router.post("", response_model=User, status_code=status.HTTP_201_CREATED)
 def create_user(
     session: SessionDep,
-    user_in: UserCreate,
+    user_in: UserRegistration,
 ) -> Any:
     """Create a new user."""
     existing_user = crud_user.get_by_email(
@@ -45,7 +45,7 @@ def create_user(
 
     return crud_user.create(
         session,
-        obj_in=user_in,
+        obj_in=UserCreate(**user_in.model_dump()),
     )
 
 

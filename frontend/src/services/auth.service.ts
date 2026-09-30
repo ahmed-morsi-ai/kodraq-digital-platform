@@ -41,6 +41,7 @@ export const AuthService = {
         email: payload.email.trim(),
         full_name: payload.full_name.trim(),
         password: payload.password,
+        role: payload.role,
       });
 
       return response.data;

@@ -15,6 +15,7 @@ import TrackDetail from "./pages/TrackDetail";
 import Tracks from "./pages/Tracks";
 import AdminPayments from "./pages/AdminPayments";
 import VerifyCertificate from "./pages/VerifyCertificate";
+import RoleDashboard from "./pages/RoleDashboard";
 
 function App() {
   return (
@@ -27,7 +28,9 @@ function App() {
 
         <Route element={<ProtectedRoute />}>
           <Route element={<RootLayout />}>
-            <Route path="/dashboard" element={<Dashboard />} />
+            <Route element={<ProtectedRoute allowedRoles={["student"]} />}>
+              <Route path="/dashboard" element={<Dashboard />} />
+            </Route>
             <Route path="/tracks" element={<Tracks />} />
             <Route path="/tracks/:trackId" element={<TrackDetail />} />
             <Route
@@ -44,6 +47,22 @@ function App() {
             <Route
               path="/quiz-attempts/:attemptId/results"
               element={<QuizResults />}
+            />
+          </Route>
+          <Route element={<ProtectedRoute allowedRoles={["client"]} />}>
+            <Route
+              path="/client-dashboard"
+              element={<RoleDashboard role="client" />}
+            />
+          </Route>
+          <Route
+            element={
+              <ProtectedRoute allowedRoles={["instructor", "admin"]} />
+            }
+          >
+            <Route
+              path="/instructor-dashboard"
+              element={<RoleDashboard role="instructor" />}
             />
           </Route>
         </Route>

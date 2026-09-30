@@ -17,6 +17,7 @@ export interface RegistrationPayload {
   email: string;
   full_name: string;
   password: string;
+  role: "student" | "client";
 }
 
 export interface TokenResponse {

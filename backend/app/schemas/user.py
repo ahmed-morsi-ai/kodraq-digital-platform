@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import AliasPath, BaseModel, ConfigDict, Field
 
 
-# Shared properties
+# Shared properties for trusted CRUD operations
 class UserBase(BaseModel):
     email: str | None = None
     full_name: str | None = None
@@ -12,25 +14,39 @@ class UserBase(BaseModel):
     role_id: int | None = None
 
 
-# Properties to receive on User creation
 class UserCreate(UserBase):
     email: str
     full_name: str
     password: str
+    role: str = "student"
+
+
+class UserRegistration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str
+    full_name: str
+    password: str
+    role: Literal["student", "client"] = "student"
 
 
 # Properties to receive on User update
-class UserUpdate(UserBase):
+class UserUpdate(BaseModel):
+    email: str | None = None
+    full_name: str | None = None
     password: str | None = None
 
 
 # Properties shared by models stored in DB
-class UserInDBBase(UserBase):
+class UserInDBBase(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     email: str
     full_name: str
+    is_active: bool
+    is_superuser: bool
+    role_id: int | None = None
     role_name: str | None = Field(
         default=None,
         validation_alias=AliasPath("role_rel", "name"),

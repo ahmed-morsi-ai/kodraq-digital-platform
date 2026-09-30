@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/AuthContext";
+import { getDashboardPath } from "@/lib/auth";
 
 function getErrorMessage(error: unknown) {
   if (isAxiosError(error)) {
@@ -53,8 +54,8 @@ export default function Login() {
     setIsSubmitting(true);
 
     try {
-      await login({ username: email.trim(), password });
-      navigate("/dashboard");
+      const user = await login({ username: email.trim(), password });
+      navigate(getDashboardPath(user), { replace: true });
     } catch (requestError: unknown) {
       console.error(
         "AUTH ERROR DETAILS:",
