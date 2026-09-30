@@ -18,35 +18,56 @@ import type { CertificateVerification } from "@/types/certificate";
 export default function VerifyCertificate() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
+  const hasCode = Boolean(code?.trim());
   const [result, setResult] = useState<CertificateVerification | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(hasCode);
   const [invalid, setInvalid] = useState(false);
 
-  const verify = useCallback(async () => {
-    if (!code?.trim()) {
-      setInvalid(true);
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    setInvalid(false);
-
-    try {
-      const verification = await certificateService.verifyCertificate(code);
-      setResult(verification);
-    } catch (error) {
-      console.error("Certificate verification failed", error);
-      setResult(null);
-      setInvalid(true);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [code]);
+  const verify = useCallback(
+    () => certificateService.verifyCertificate(code ?? ""),
+    [code],
+  );
 
   useEffect(() => {
-    void verify();
-  }, [verify]);
+    if (!hasCode) return;
+    let active = true;
+    void verify()
+      .then((verification) => {
+        if (active) {
+          setResult(verification);
+          setInvalid(false);
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          console.error("Certificate verification failed", error);
+          setResult(null);
+          setInvalid(true);
+        }
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [hasCode, verify]);
+
+  const handleRetry = () => {
+    setIsLoading(true);
+    setInvalid(false);
+    void verify()
+      .then((verification) => {
+        setResult(verification);
+        setInvalid(false);
+      })
+      .catch((error: unknown) => {
+        console.error("Certificate verification failed", error);
+        setResult(null);
+        setInvalid(true);
+      })
+      .finally(() => setIsLoading(false));
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 px-6 py-10 text-white md:py-16">
@@ -65,7 +86,7 @@ export default function VerifyCertificate() {
               Checking the credential against Kodraq Digital records...
             </p>
           </div>
-        ) : invalid || !result?.valid ? (
+        ) : !hasCode || invalid || !result?.valid ? (
           <Card className="w-full max-w-2xl border-red-300/20 bg-white text-slate-900 shadow-2xl">
             <CardContent className="flex flex-col items-center px-6 py-14 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50 text-red-600">
@@ -84,7 +105,7 @@ export default function VerifyCertificate() {
               <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                 <Button
                   type="button"
-                  onClick={() => void verify()}
+                  onClick={handleRetry}
                   className="gap-2 bg-slate-950 text-white hover:bg-slate-800"
                 >
                   <Search className="h-4 w-4" />

@@ -43,29 +43,50 @@ export default function Tracks() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadTracks = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const [trackData, enrollmentData] = await Promise.all([
+  const loadTracks = useCallback(() =>
+    Promise.all([
         trackService.getActiveTracks(),
         enrollmentService.getMyEnrollments(),
-      ]);
+      ]),
+    [],
+  );
 
-      setTracks(trackData);
-      setEnrollments(enrollmentData);
-    } catch (requestError) {
-      console.error("Failed to load tracks", requestError);
-      setError(getApiErrorMessage(requestError));
-    } finally {
-      setIsLoading(false);
-    }
+  const applyTracks = useCallback(([trackData, enrollmentData]: Awaited<ReturnType<typeof loadTracks>>) => {
+    setTracks(trackData);
+    setEnrollments(enrollmentData);
+    setError(null);
+  }, []);
+
+  const applyTrackError = useCallback((requestError: unknown) => {
+    console.error("Failed to load tracks", requestError);
+    setError(getApiErrorMessage(requestError));
   }, []);
 
   useEffect(() => {
-    void loadTracks();
-  }, [loadTracks]);
+    let active = true;
+    void loadTracks()
+      .then((data) => {
+        if (active) applyTracks(data);
+      })
+      .catch((requestError: unknown) => {
+        if (active) applyTrackError(requestError);
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [applyTrackError, applyTracks, loadTracks]);
+
+  const retryTracks = () => {
+    setIsLoading(true);
+    setError(null);
+    void loadTracks()
+      .then(applyTracks)
+      .catch(applyTrackError)
+      .finally(() => setIsLoading(false));
+  };
 
   const enrollmentByTrack = useMemo(() => {
     return new Map(enrollments.map((enrollment) => [enrollment.track_id, enrollment]));
@@ -146,7 +167,7 @@ export default function Tracks() {
                 type="button"
                 variant="outline"
                 className="mt-6 gap-2 border-red-200 bg-white text-red-700 hover:bg-red-100"
-                onClick={() => void loadTracks()}
+                onClick={retryTracks}
               >
                 <RefreshCw className="h-4 w-4" />
                 Try again

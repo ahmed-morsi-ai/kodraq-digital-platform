@@ -1,24 +1,32 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
 import RootLayout from "./layouts/RootLayout";
-import Dashboard from "./pages/Dashboard";
-import Landing from "./pages/Landing";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import MyLearning from "./pages/MyLearning";
-import MyCertificates from "./pages/MyCertificates";
-import NotFound from "./pages/NotFound";
-import QuizResults from "./pages/QuizResults";
-import QuizTaker from "./pages/QuizTaker";
-import FinalProject from "./pages/FinalProject";
-import TrackDetail from "./pages/TrackDetail";
-import Tracks from "./pages/Tracks";
-import AdminPayments from "./pages/AdminPayments";
-import VerifyCertificate from "./pages/VerifyCertificate";
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Landing = lazy(() => import("./pages/Landing"));
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
+const MyLearning = lazy(() => import("./pages/MyLearning"));
+const MyCertificates = lazy(() => import("./pages/MyCertificates"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const QuizResults = lazy(() => import("./pages/QuizResults"));
+const QuizTaker = lazy(() => import("./pages/QuizTaker"));
+const FinalProject = lazy(() => import("./pages/FinalProject"));
+const TrackDetail = lazy(() => import("./pages/TrackDetail"));
+const Tracks = lazy(() => import("./pages/Tracks"));
+const AdminPayments = lazy(() => import("./pages/AdminPayments"));
+const VerifyCertificate = lazy(() => import("./pages/VerifyCertificate"));
 import RoleDashboard from "./pages/RoleDashboard";
 
 function App() {
   return (
+      <Suspense
+        fallback={
+          <div className="flex min-h-screen items-center justify-center bg-[#f8fbff] text-sm text-slate-600">
+            Loading workspace...
+          </div>
+        }
+      >
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Landing />} />
@@ -69,6 +77,7 @@ function App() {
 
         <Route path="*" element={<NotFound />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

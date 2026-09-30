@@ -37,25 +37,47 @@ export default function MyCertificates() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadCertificates = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  const loadCertificates = useCallback(
+    () => certificateService.getMyCertificates(),
+    [],
+  );
 
-    try {
-      const data = await certificateService.getMyCertificates();
-      setCertificates(data);
-    } catch (requestError) {
-      console.error("Failed to load certificates", requestError);
-      setCertificates([]);
-      setError(getErrorMessage(requestError));
-    } finally {
-      setIsLoading(false);
-    }
+  const applyCertificates = useCallback((data: Certificate[]) => {
+    setCertificates(data);
+    setError(null);
+  }, []);
+
+  const applyCertificateError = useCallback((requestError: unknown) => {
+    console.error("Failed to load certificates", requestError);
+    setCertificates([]);
+    setError(getErrorMessage(requestError));
   }, []);
 
   useEffect(() => {
-    void loadCertificates();
-  }, [loadCertificates]);
+    let active = true;
+    void loadCertificates()
+      .then((data) => {
+        if (active) applyCertificates(data);
+      })
+      .catch((requestError: unknown) => {
+        if (active) applyCertificateError(requestError);
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [applyCertificateError, applyCertificates, loadCertificates]);
+
+  const retryCertificates = () => {
+    setIsLoading(true);
+    setError(null);
+    void loadCertificates()
+      .then(applyCertificates)
+      .catch(applyCertificateError)
+      .finally(() => setIsLoading(false));
+  };
 
   if (isLoading) {
     return (
@@ -116,7 +138,7 @@ export default function MyCertificates() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => void loadCertificates()}
+                onClick={retryCertificates}
                 className="gap-2 border-red-200 bg-white"
               >
                 <RefreshCw className="h-4 w-4" />

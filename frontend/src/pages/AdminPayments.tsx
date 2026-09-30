@@ -46,24 +46,46 @@ export default function AdminPayments() {
 
   const canAccess = Boolean(user?.is_superuser || user?.role === "admin");
 
-  const loadPayments = useCallback(async () => {
-    setIsLoading(true);
+  const loadPayments = useCallback(
+    () => paymentService.getAdminPayments(),
+    [],
+  );
+
+  const applyPayments = useCallback((data: Payment[]) => {
+    setPayments(data.filter((payment) => payment.status === "PENDING_VERIFICATION"));
     setError(null);
-    try {
-      const data = await paymentService.getAdminPayments();
-      setPayments(data.filter((payment) => payment.status === "PENDING_VERIFICATION"));
-    } catch (requestError) {
-      setError(getErrorMessage(requestError));
-    } finally {
-      setIsLoading(false);
-    }
+  }, []);
+
+  const applyPaymentError = useCallback((requestError: unknown) => {
+    setError(getErrorMessage(requestError));
   }, []);
 
   useEffect(() => {
-    if (canAccess) {
-      void loadPayments();
-    }
-  }, [canAccess, loadPayments]);
+    if (!canAccess) return;
+    let active = true;
+    void loadPayments()
+      .then((data) => {
+        if (active) applyPayments(data);
+      })
+      .catch((requestError: unknown) => {
+        if (active) applyPaymentError(requestError);
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [applyPaymentError, applyPayments, canAccess, loadPayments]);
+
+  const refreshPayments = () => {
+    setIsLoading(true);
+    setError(null);
+    void loadPayments()
+      .then(applyPayments)
+      .catch(applyPaymentError)
+      .finally(() => setIsLoading(false));
+  };
 
   const pendingCount = useMemo(() => payments.length, [payments]);
 
@@ -109,7 +131,7 @@ export default function AdminPayments() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => void loadPayments()}
+            onClick={refreshPayments}
             disabled={isLoading}
             className="gap-2"
           >
