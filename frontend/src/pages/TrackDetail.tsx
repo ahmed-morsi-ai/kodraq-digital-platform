@@ -13,9 +13,12 @@ import {
   PlayCircle,
   RefreshCw,
 } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/context/AuthContext";
+import { projectRole } from "@/lib/finalProjects";
+import EWalletCheckout from "@/components/EWalletCheckout";
 import {
   Card,
   CardContent,
@@ -23,369 +26,279 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import AssignmentList from "@/components/AssignmentList";
+import TrackAssignments from "@/components/TrackAssignments";
 import EnrollmentPanel from "@/components/EnrollmentPanel";
 import PaymentCheckout from "@/components/PaymentCheckout";
 import QuizList from "@/components/QuizList";
-import { assignmentService } from "@/services/assignment.service";
 import { enrollmentService } from "@/services/enrollment.service";
 import { trackService } from "@/services/track.service";
-import type { Assignment } from "@/types/assignment";
 import type { Enrollment } from "@/types/enrollment";
-import type {
-  LessonProgress,
-  ProgressStatus,
-} from "@/types/progress";
+import type { LessonProgress, ProgressStatus } from "@/types/progress";
 import type { TrackCurriculum } from "@/types/track";
 
 function getErrorMessage(error: unknown) {
   if (isAxiosError(error)) {
     const detail = error.response?.data?.detail;
-
-    if (typeof detail === "string" && detail.trim()) {
-      return detail;
-    }
-
-    if (error.response?.status === 404) {
-      return "This track could not be found or is no longer active.";
-    }
-
-    if (error.response?.status === 403) {
-      return "You do not have permission to access this curriculum.";
-    }
-
-    if (error.response?.status === 500) {
-      return "The server encountered an unexpected error.";
-    }
+    if (typeof detail === "string" && detail.trim()) return detail;
+    if (error.response?.status === 404) return "This track could not be found or is no longer active.";
+    if (error.response?.status === 403) return "You do not have permission to access this curriculum.";
+    if (error.response?.status === 500) return "The server encountered an unexpected error.";
   }
-
   return "Unable to load this curriculum right now. Please try again.";
 }
 
 function getProgressLabel(status?: ProgressStatus) {
   switch (status) {
-    case "in_progress":
-      return "In progress";
-    case "completed":
-      return "Completed";
-    default:
-      return "Not started";
+    case "in_progress": return "In progress";
+    case "completed": return "Completed";
+    default: return "Not started";
   }
 }
+
+const EMPTY_PROGRESS: LessonProgress[] = [];
 
 export default function TrackDetail() {
   const { trackId } = useParams<{ trackId: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const finalProjectRole = projectRole(user);
+  const numericTrackId = Number(trackId);
+  const isValidTrackId = Number.isInteger(numericTrackId) && numericTrackId > 0;
 
   const [track, setTrack] = useState<TrackCurriculum | null>(null);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [showPayment, setShowPayment] = useState(false);
   const [progress, setProgress] = useState<LessonProgress[]>([]);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [isAssignmentsLoading, setIsAssignmentsLoading] = useState(false);
-  const [assignmentsError, setAssignmentsError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isEnrollmentLoading, setIsEnrollmentLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadedTrackId, setLoadedTrackId] = useState<number | null>(null);
+  const [loadedEnrollmentTrackId, setLoadedEnrollmentTrackId] = useState<number | null>(null);
   const [isProgressLoading, setIsProgressLoading] = useState(false);
-  const [progressActionLessonId, setProgressActionLessonId] =
-    useState<number | null>(null);
+  const [loadedProgressEnrollmentId, setLoadedProgressEnrollmentId] = useState<number | null>(null);
+  const [progressActionLessonId, setProgressActionLessonId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progressError, setProgressError] = useState<string | null>(null);
 
-  const numericTrackId = Number(trackId);
-  const isValidTrackId =
-    Number.isInteger(numericTrackId) && numericTrackId > 0;
+  const isCurriculumLoading = isLoading || (isValidTrackId && loadedTrackId !== numericTrackId);
+  const isEnrollmentLoading = isValidTrackId && loadedEnrollmentTrackId !== numericTrackId;
 
   const currentEnrollment = useMemo(
-    () =>
-      enrollments.find(
-        (enrollment) => enrollment.track_id === numericTrackId,
-      ),
+    () => enrollments.find((enrollment) => enrollment.track_id === numericTrackId),
     [enrollments, numericTrackId],
   );
+
   const hasCurriculumAccess = currentEnrollment?.status === "active";
 
+  const currentProgress = currentEnrollment?.id === loadedProgressEnrollmentId
+    ? progress
+    : EMPTY_PROGRESS;
+  const isCurrentProgressLoading = Boolean(
+    hasCurriculumAccess && currentEnrollment && (
+      isProgressLoading || loadedProgressEnrollmentId !== currentEnrollment.id
+    ),
+  );
+  const currentProgressError = currentEnrollment?.id === loadedProgressEnrollmentId
+    ? progressError
+    : null;
 
   const totalLessons = useMemo(
-    () =>
-      track?.modules.reduce(
-        (total, module) => total + module.lessons.length,
-        0,
-      ) ?? 0,
+    () => track?.modules.reduce((total, module) => total + module.lessons.length, 0) ?? 0,
     [track],
   );
 
   const completedLessons = useMemo(
-    () =>
-      progress.filter(
-        (item) => item.status === "completed",
-      ).length,
-    [progress],
+    () => currentProgress.filter((item) => item.status === "completed").length,
+    [currentProgress],
   );
 
-  const overallProgress =
-    totalLessons > 0
-      ? Math.round((completedLessons / totalLessons) * 100)
-      : 0;
-
-  const assignmentsByModule = useMemo(
-    () => {
-      const grouped = new Map<number, Assignment[]>();
-
-      assignments
-        .filter((assignment) => assignment.is_active)
-        .forEach((assignment) => {
-          if (assignment.module_id === null) {
-            return;
-          }
-
-          const current = grouped.get(assignment.module_id) ?? [];
-          current.push(assignment);
-          grouped.set(assignment.module_id, current);
-        });
-
-      grouped.forEach((items) => {
-        items.sort((a, b) => a.ordering - b.ordering || a.id - b.id);
-      });
-
-      return grouped;
-    },
-    [assignments],
-  );
+  const overallProgress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
   const progressByLesson = useMemo(
-    () =>
-      new Map(
-        progress.map((item) => [item.lesson_id, item]),
-      ),
-    [progress],
+    () => new Map(currentProgress.map((item) => [item.lesson_id, item])),
+    [currentProgress],
   );
 
-  const loadCurriculum = useCallback(async () => {
-    if (!isValidTrackId) {
-      setError("The requested track ID is invalid.");
-      setIsLoading(false);
-      setIsEnrollmentLoading(false);
-      return;
-    }
+  const loadCurriculum = useCallback(
+    () => trackService.getCurriculum(numericTrackId),
+    [numericTrackId],
+  );
 
+  const loadEnrollment = useCallback(
+    () => enrollmentService.getMyEnrollments(),
+    [],
+  );
+
+  const loadProgress = useCallback(
+    (enrollmentId: number) => enrollmentService.getProgress(enrollmentId),
+    [],
+  );
+
+  useEffect(() => {
+    if (!isValidTrackId) return;
+    let active = true;
+    void loadCurriculum()
+      .then((curriculum) => {
+        if (active) {
+          setTrack(curriculum);
+          setError(null);
+        }
+      })
+      .catch((requestError: unknown) => {
+        if (active) {
+          console.error("Failed to load track curriculum", requestError);
+          setTrack(null);
+          setError(getErrorMessage(requestError));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoadedTrackId(numericTrackId);
+          setIsLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [isValidTrackId, loadCurriculum, numericTrackId]);
+
+  useEffect(() => {
+    if (!isValidTrackId) return;
+    let active = true;
+    void loadEnrollment()
+      .then((data) => {
+        if (active) setEnrollments(data);
+      })
+      .catch((requestError: unknown) => {
+        if (active) {
+          console.error("Failed to load enrollment status", requestError);
+          setEnrollments([]);
+        }
+      })
+      .finally(() => {
+        if (active) setLoadedEnrollmentTrackId(numericTrackId);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isValidTrackId, loadEnrollment, numericTrackId]);
+
+  useEffect(() => {
+    if (!hasCurriculumAccess || !currentEnrollment) return;
+    const enrollmentId = currentEnrollment.id;
+    let active = true;
+    void loadProgress(enrollmentId)
+      .then((data) => {
+        if (active) {
+          setProgress(data);
+          setProgressError(null);
+        }
+      })
+      .catch((requestError: unknown) => {
+        if (active) {
+          console.error("Failed to load lesson progress", requestError);
+          setProgress([]);
+          setProgressError("Unable to load lesson progress. Please try again.");
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setIsProgressLoading(false);
+          setLoadedProgressEnrollmentId(enrollmentId);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentEnrollment, hasCurriculumAccess, loadProgress]);
+
+  const retryCurriculum = () => {
     setIsLoading(true);
     setError(null);
+    void loadCurriculum()
+      .then((curriculum) => {
+        setTrack(curriculum);
+        setLoadedTrackId(numericTrackId);
+      })
+      .catch((requestError: unknown) => {
+        console.error("Failed to load track curriculum", requestError);
+        setTrack(null);
+        setError(getErrorMessage(requestError));
+        setLoadedTrackId(numericTrackId);
+      })
+      .finally(() => setIsLoading(false));
+  };
 
-    try {
-      const curriculum =
-        await trackService.getCurriculum(numericTrackId);
-
-      setTrack(curriculum);
-    } catch (requestError) {
-      console.error("Failed to load track curriculum", requestError);
-      setTrack(null);
-      setError(getErrorMessage(requestError));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isValidTrackId, numericTrackId]);
-
-  const loadEnrollment = useCallback(async () => {
-    if (!isValidTrackId) {
-      return;
-    }
-
-    setIsEnrollmentLoading(true);
-
-    try {
-      const data = await enrollmentService.getMyEnrollments();
-      setEnrollments(data);
-    } catch (requestError) {
-      console.error("Failed to load enrollment status", requestError);
-      setEnrollments([]);
-    } finally {
-      setIsEnrollmentLoading(false);
-    }
-  }, [isValidTrackId]);
-
-  const loadAssignments = useCallback(async () => {
-    if (
-      !isValidTrackId ||
-      !currentEnrollment ||
-      currentEnrollment.status !== "active"
-    ) {
-      setAssignments([]);
-      setAssignmentsError(null);
-      return;
-    }
-
-    setIsAssignmentsLoading(true);
-    setAssignmentsError(null);
-
-    try {
-      const data = await assignmentService.getByTrack(numericTrackId);
-      setAssignments(data);
-    } catch (requestError) {
-      console.error("Failed to load assignments", requestError);
-      setAssignments([]);
-      setAssignmentsError("Unable to load assignments right now.");
-    } finally {
-      setIsAssignmentsLoading(false);
-    }
-  }, [currentEnrollment, isValidTrackId, numericTrackId]);
-
-  const loadProgress = useCallback(async (enrollmentId: number) => {
+  const retryProgress = () => {
+    if (!currentEnrollment) return;
+    const enrollmentId = currentEnrollment.id;
     setIsProgressLoading(true);
     setProgressError(null);
-
-    try {
-      const data = await enrollmentService.getProgress(enrollmentId);
-      setProgress(data);
-    } catch (requestError) {
-      console.error("Failed to load lesson progress", requestError);
-      setProgress([]);
-      setProgressError(
-        "Unable to load lesson progress. Please try again.",
-      );
-    } finally {
-      setIsProgressLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadCurriculum();
-    void loadEnrollment();
-  }, [loadCurriculum, loadEnrollment]);
-
-  useEffect(() => {
-    if (hasCurriculumAccess && currentEnrollment) {
-      void loadProgress(currentEnrollment.id);
-      void loadAssignments();
-    } else {
-      setProgress([]);
-      setProgressError(null);
-      setAssignments([]);
-      setAssignmentsError(null);
-    }
-  }, [currentEnrollment, hasCurriculumAccess, loadAssignments, loadProgress]);
+    void loadProgress(enrollmentId)
+      .then((data) => {
+        setProgress(data);
+        setProgressError(null);
+      })
+      .catch((requestError: unknown) => {
+        console.error("Failed to load lesson progress", requestError);
+        setProgress([]);
+        setProgressError("Unable to load lesson progress. Please try again.");
+      })
+      .finally(() => {
+        setIsProgressLoading(false);
+        setLoadedProgressEnrollmentId(enrollmentId);
+      });
+  };
 
   const handleEnrollmentCreated = (enrollment: Enrollment) => {
     setEnrollments((current) => [
-      ...current.filter(
-        (item) => item.track_id !== enrollment.track_id,
-      ),
+      ...current.filter((item) => item.track_id !== enrollment.track_id),
       enrollment,
     ]);
   };
 
   const handleProgressAction = async (lessonId: number) => {
-    if (!currentEnrollment || currentEnrollment.status !== "active") {
-      return;
-    }
-
+    if (!currentEnrollment || currentEnrollment.status !== "active") return;
     const existing = progressByLesson.get(lessonId);
-
     setProgressActionLessonId(lessonId);
     setProgressError(null);
-
     try {
       if (!existing) {
-        const created = await enrollmentService.createProgress(
-          currentEnrollment.id,
-          {
-            lesson_id: lessonId,
-            status: "in_progress",
-            progress_percentage: 0,
-          },
-        );
-
+        const created = await enrollmentService.createProgress(currentEnrollment.id, {
+          lesson_id: lessonId,
+          status: "in_progress",
+          progress_percentage: 0,
+        });
         setProgress((current) => [...current, created]);
         return;
       }
-
-      const nextStatus: ProgressStatus =
-        existing.status === "completed"
-          ? "in_progress"
-          : "completed";
-
-      const nextPercentage =
-        nextStatus === "completed"
-          ? 100
-          : 0;
-
-      const updated = await enrollmentService.updateProgress(
-        currentEnrollment.id,
-        existing.id,
-        {
-          status: nextStatus,
-          progress_percentage: nextPercentage,
-        },
-      );
-
-      setProgress((current) =>
-        current.map((item) =>
-          item.id === updated.id ? updated : item,
-        ),
-      );
+      const nextStatus: ProgressStatus = existing.status === "completed" ? "in_progress" : "completed";
+      const nextPercentage = nextStatus === "completed" ? 100 : 0;
+      const updated = await enrollmentService.updateProgress(currentEnrollment.id, existing.id, {
+        status: nextStatus,
+        progress_percentage: nextPercentage,
+      });
+      setProgress((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     } catch (requestError) {
       console.error("Failed to update lesson progress", requestError);
-      setProgressError(
-        "Unable to update this lesson progress. Please try again.",
-      );
+      setProgressError("Unable to update this lesson progress. Please try again.");
     } finally {
       setProgressActionLessonId(null);
     }
   };
 
-  if (isLoading) {
-    if (track && !isEnrollmentLoading && !hasCurriculumAccess) {
+  const openLesson = (lessonId: number) => {
+    navigate(`/tracks/${numericTrackId}/lessons/${lessonId}`);
+  };
+
+  if (isCurriculumLoading) {
     return (
-      <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-        <section className="space-y-6">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-blue-600">
-              Track preview
-            </p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
-              {track.name}
-            </h1>
-            <p className="mt-4 max-w-3xl text-base leading-7 text-gray-600">
-              {track.description || "Build practical skills through a structured technical learning path."}
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-6">
-            <h2 className="text-xl font-semibold text-slate-900">What you will learn</h2>
-            <ul className="mt-4 grid gap-3 text-sm leading-6 text-gray-600 md:grid-cols-2">
-              <li>Structured modules with practical technical lessons.</li>
-              <li>Hands-on exercises and track-specific problem solving.</li>
-              <li>Projects, assessments, and measurable learning progress.</li>
-              <li>Production-minded engineering skills aligned to the track.</li>
-            </ul>
-          </div>
-
-          {track.is_premium ? (
-            <PaymentCheckout
-              track={track}
-              enrollment={currentEnrollment}
-            />
-          ) : (
-            <EnrollmentPanel
-              trackId={numericTrackId}
-              enrollment={currentEnrollment}
-              onEnrollmentCreated={handleEnrollmentCreated}
-            />
-          )}
-        </section>
-      </div>
-    );
-  }
-  return (
       <div className="flex min-h-[calc(100vh-81px)] w-full items-center justify-center px-6 py-12">
         <div className="flex flex-col items-center text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-600">
             <Loader2 className="h-7 w-7 animate-spin" />
           </div>
-
           <h2 className="mt-5 text-lg font-semibold text-slate-900">
             Loading curriculum
           </h2>
-
           <p className="mt-2 text-sm text-gray-500">
             Preparing modules, lessons, and resources...
           </p>
@@ -394,7 +307,7 @@ export default function TrackDetail() {
     );
   }
 
-  if (error || !track) {
+  if (error || !track || !isValidTrackId) {
     return (
       <div className="w-full px-6 py-10">
         <div className="mx-auto max-w-3xl">
@@ -403,33 +316,16 @@ export default function TrackDetail() {
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-red-600">
                 <BookOpen className="h-7 w-7" />
               </div>
-
-              <h2 className="mt-5 text-xl font-semibold text-red-900">
-                Unable to load curriculum
-              </h2>
-
+              <h2 className="mt-5 text-xl font-semibold text-red-900">Unable to load curriculum</h2>
               <p className="mt-2 max-w-lg text-sm leading-6 text-red-700">
-                {error || "The requested track is unavailable."}
+                {error || (isValidTrackId ? "The requested track is unavailable." : "The requested track ID is invalid.")}
               </p>
-
               <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="gap-2 border-red-200 bg-white"
-                  onClick={() => navigate("/tracks")}
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back to tracks
+                <Button type="button" variant="outline" className="gap-2 border-red-200 bg-white" onClick={() => navigate("/tracks")}>
+                  <ArrowLeft className="h-4 w-4" /> Back to tracks
                 </Button>
-
-                <Button
-                  type="button"
-                  className="gap-2 bg-blue-600 text-white hover:bg-blue-700"
-                  onClick={() => void loadCurriculum()}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Try again
+                <Button type="button" className="gap-2 bg-blue-600 text-white hover:bg-blue-700" onClick={retryCurriculum}>
+                  <RefreshCw className="h-4 w-4" /> Try again
                 </Button>
               </div>
             </CardContent>
@@ -439,17 +335,33 @@ export default function TrackDetail() {
     );
   }
 
-  return (
-    <div className="w-full px-6 py-8">
-      <div className="mx-auto max-w-7xl space-y-8">
+  if (showPayment) {
+    return (
+      <main className="mx-auto max-w-5xl px-5 py-8 sm:px-8">
         <Button
           type="button"
           variant="ghost"
-          className="gap-2 px-0 text-gray-500 hover:bg-transparent hover:text-slate-900"
-          onClick={() => navigate("/tracks")}
+          className="mb-6 gap-2 px-0 text-gray-500 hover:bg-transparent hover:text-slate-900"
+          onClick={() => setShowPayment(false)}
         >
-          <ArrowLeft className="h-4 w-4" />
-          Back to tracks
+          <ArrowLeft className="h-4 w-4" /> Back to track
+        </Button>
+        <EWalletCheckout
+          userName={user?.full_name ?? ""}
+          userEmail={user?.email ?? ""}
+          amount={Number(track.price ?? 0)}
+          currency={track.currency}
+          trackName={track.name}
+        />
+      </main>
+    );
+  }
+
+  return (
+    <div className="w-full px-6 py-8">
+      <div className="mx-auto max-w-7xl space-y-8">
+        <Button type="button" variant="ghost" className="gap-2 px-0 text-gray-500 hover:bg-transparent hover:text-slate-900" onClick={() => navigate("/tracks")}>
+          <ArrowLeft className="h-4 w-4" /> Back to tracks
         </Button>
 
         <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
@@ -457,132 +369,128 @@ export default function TrackDetail() {
             <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
               <div className="max-w-3xl">
                 <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
-                  <BookOpen className="h-3.5 w-3.5" />
-                  Learning track
+                  <BookOpen className="h-3.5 w-3.5" /> Learning track
                 </div>
-
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
-                  {track.name}
-                </h1>
-
+                <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">{track.name}</h1>
                 <p className="mt-4 text-sm leading-7 text-gray-600 md:text-base">
-                  {track.description ||
-                    "Explore the complete curriculum for this learning track."}
+                  {track.description || "Explore the complete curriculum for this learning track."}
                 </p>
               </div>
-
               <div className="grid grid-cols-2 gap-3 md:min-w-[220px]">
                 <div className="rounded-xl border border-gray-200 bg-white p-4">
                   <Layers3 className="h-5 w-5 text-blue-600" />
-                  <p className="mt-3 text-2xl font-bold text-slate-900">
-                    {track.modules.length}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {track.modules.length === 1 ? "Module" : "Modules"}
-                  </p>
+                  <p className="mt-3 text-2xl font-bold text-slate-900">{track.modules.length}</p>
+                  <p className="text-xs text-gray-500">{track.modules.length === 1 ? "Module" : "Modules"}</p>
                 </div>
-
                 <div className="rounded-xl border border-gray-200 bg-white p-4">
                   <FileText className="h-5 w-5 text-emerald-600" />
                   <p className="mt-3 text-2xl font-bold text-slate-900">
-                    {track.modules.reduce(
-                      (total, module) =>
-                        total + module.resources.length,
-                      0,
-                    )}
+                    {track.modules.reduce((total, module) => total + module.resources.length, 0)}
                   </p>
-                  <p className="text-xs text-gray-500">
-                    Resources
-                  </p>
+                  <p className="text-xs text-gray-500">Resources</p>
                 </div>
               </div>
             </div>
           </div>
         </section>
 
+        <section className="grid gap-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-6 md:grid-cols-3 md:p-8">
+          <div>
+            <h2 className="font-bold text-emerald-950">From zero to mastery</h2>
+            <p className="mt-2 text-sm leading-6 text-emerald-900">
+              Progress through foundations, production backend, AI/RAG, and a deployed graduation project.
+            </p>
+          </div>
+          <div>
+            <h2 className="font-bold text-emerald-950">Career opportunities</h2>
+            <p className="mt-2 text-sm leading-6 text-emerald-900">
+              Top performers with high assessment results have a high likelihood of job placement opportunities.
+            </p>
+          </div>
+          <div>
+            <h2 className="font-bold text-emerald-950">100% money-back guarantee</h2>
+            <p className="mt-2 text-sm leading-6 text-emerald-900">
+              Enroll with the program's full money-back guarantee.
+            </p>
+          </div>
+        </section>
+
         {!isEnrollmentLoading && (
           <>
-            {trackId ? <QuizList trackId={Number(trackId)} /> : null}
+            {hasCurriculumAccess && trackId ? (
+              <QuizList trackId={Number(trackId)} />
+            ) : null}
 
-            {track?.is_premium ? (
-              <PaymentCheckout
-                track={track}
-                enrollment={currentEnrollment}
-              />
-            ) : (
+            {!track.is_premium ? (
               <EnrollmentPanel
                 trackId={numericTrackId}
                 enrollment={currentEnrollment}
-              onEnrollmentCreated={handleEnrollmentCreated}
-            />
-            )}
+                onEnrollmentCreated={handleEnrollmentCreated}
+                onEnrollmentSuccess={() => setShowPayment(true)}
+              />
+            ) : null}
           </>
         )}
 
-        {!isEnrollmentLoading &&
-          currentEnrollment &&
-          currentEnrollment.status === "active" && (
-            <Card className="border-blue-200 shadow-sm">
-              <CardContent className="p-5 md:p-6">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">
-                      Overall progress
-                    </p>
-
-                    <p className="mt-1 text-2xl font-bold text-slate-900">
-                      {overallProgress}%
-                    </p>
+        {!isEnrollmentLoading && currentEnrollment && currentEnrollment.status === "active" && (
+          <Card className="border-blue-200 shadow-sm">
+            <CardContent className="p-5 md:p-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Overall progress</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900">{overallProgress}%</p>
+                </div>
+                <div className="sm:min-w-[280px]">
+                  <div className="mb-2 flex items-center justify-between text-xs text-gray-500">
+                    <span>{completedLessons} of {totalLessons} lessons completed</span>
+                    {isCurrentProgressLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   </div>
-
-                  <div className="sm:min-w-[280px]">
-                    <div className="mb-2 flex items-center justify-between text-xs text-gray-500">
-                      <span>
-                        {completedLessons} of {totalLessons} lessons completed
-                      </span>
-                      {isProgressLoading && (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      )}
-                    </div>
-
-                    <div
-                      className="h-2.5 overflow-hidden rounded-full bg-gray-100"
-                      aria-label={`Overall progress ${overallProgress}%`}
-                    >
-                      <div
-                        className="h-full rounded-full bg-blue-600 transition-all duration-300"
-                        style={{ width: `${overallProgress}%` }}
-                      />
-                    </div>
+                  <div className="h-2.5 overflow-hidden rounded-full bg-gray-100" aria-label={`Overall progress ${overallProgress}%`}>
+                    <div className="h-full rounded-full bg-blue-600 transition-all duration-300" style={{ width: `${overallProgress}%` }} />
                   </div>
                 </div>
+              </div>
+              {currentProgressError && (
+                <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  <span>{currentProgressError}</span>
+                  <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={retryProgress}>
+                    Retry
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-                {progressError && (
-                  <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                    <span>{progressError}</span>
+        {(finalProjectRole === "manager" || (finalProjectRole === "student" && hasCurriculumAccess)) && (
+          <Card className="border-slate-200 shadow-sm">
+            <CardContent className="flex flex-wrap items-center justify-between gap-4 p-6">
+              <div>
+                <h2 className="font-semibold text-slate-900">Final project</h2>
+                <p className="mt-1 text-sm text-slate-500">{finalProjectRole === "manager" ? "Review student work, grades, and feedback for this track." : "Read the requirements, submit your work, and view instructor feedback."}</p>
+              </div>
+              <Button asChild variant="outline"><Link to={`/tracks/${numericTrackId}/final-project`}>{finalProjectRole === "manager" ? "Review final projects" : "Open final project"}</Link></Button>
+            </CardContent>
+          </Card>
+        )}
 
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() =>
-                        void loadProgress(currentEnrollment.id)
-                      }
-                    >
-                      Retry
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+        {(finalProjectRole === "manager" || (finalProjectRole === "student" && currentEnrollment)) && (
+          <Card className="border-slate-200 shadow-sm">
+            <CardContent className="flex flex-wrap items-center justify-between gap-4 p-6">
+              <div>
+                <h2 className="font-semibold text-slate-900">Graduation</h2>
+                <p className="mt-1 text-sm text-slate-500">{finalProjectRole === "manager" ? "Inspect student eligibility and finalize graduation for this track." : "Check every graduation gate and view your saved graduation result."}</p>
+              </div>
+              <Button asChild variant="outline"><Link to={`/tracks/${numericTrackId}/graduation`}>{finalProjectRole === "manager" ? "Review graduation" : "View graduation status"}</Link></Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {!isEnrollmentLoading && <TrackAssignments track={track} hasEnrollment={hasCurriculumAccess} />}
 
         <section className="space-y-5">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-              Curriculum
-            </h2>
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Curriculum</h2>
             <p className="mt-1 text-sm text-gray-500">
               Follow the modules, lessons, assignments, and supporting resources in order.
             </p>
@@ -592,34 +500,22 @@ export default function TrackDetail() {
             <Card className="border-gray-200 shadow-sm">
               <CardContent className="flex flex-col items-center px-6 py-14 text-center">
                 <Layers3 className="h-8 w-8 text-gray-400" />
-                <h3 className="mt-4 text-lg font-semibold text-slate-900">
-                  No modules available yet
-                </h3>
-                <p className="mt-2 text-sm text-gray-500">
-                  This track does not have curriculum modules published yet.
-                </p>
+                <h3 className="mt-4 text-lg font-semibold text-slate-900">No modules available yet</h3>
+                <p className="mt-2 text-sm text-gray-500">This track does not have curriculum modules published yet.</p>
               </CardContent>
             </Card>
           ) : (
             track.modules.map((module, moduleIndex) => (
-              <Card
-                key={module.id}
-                className="overflow-hidden border-gray-200 shadow-sm"
-              >
+              <Card key={module.id} className="overflow-hidden border-gray-200 shadow-sm">
                 <CardHeader className="border-b border-gray-100 bg-gray-50/70">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white">
                       {String(moduleIndex + 1).padStart(2, "0")}
                     </div>
-
                     <div className="min-w-0">
-                      <CardTitle className="text-xl text-slate-900">
-                        {module.title}
-                      </CardTitle>
-
+                      <CardTitle className="text-xl text-slate-900">{module.title}</CardTitle>
                       <CardDescription className="mt-2 max-w-3xl leading-6">
-                        {module.description ||
-                          "Module description unavailable."}
+                        {module.description || "Module description unavailable."}
                       </CardDescription>
                     </div>
                   </div>
@@ -630,9 +526,7 @@ export default function TrackDetail() {
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                       <BookOpen className="h-4 w-4 text-blue-600" />
                       Lessons
-                      <span className="text-xs font-normal text-gray-400">
-                        ({module.lessons.length})
-                      </span>
+                      <span className="text-xs font-normal text-gray-400">({module.lessons.length})</span>
                     </div>
 
                     {module.lessons.length === 0 ? (
@@ -642,154 +536,79 @@ export default function TrackDetail() {
                     ) : (
                       <div className="space-y-3">
                         {module.lessons.map((lesson, lessonIndex) => {
-                          const lessonProgress =
-                            progressByLesson.get(lesson.id);
-
-                          const status =
-                            lessonProgress?.status ?? "not_started";
-
-                          const isActionLoading =
-                            progressActionLessonId === lesson.id;
+                          const lessonProgress = progressByLesson.get(lesson.id);
+                          const status = lessonProgress?.status ?? "not_started";
+                          const isActionLoading = progressActionLessonId === lesson.id;
 
                           return (
-                            <div
-                              key={lesson.id}
-                              className={`rounded-xl border p-4 transition-colors ${
-                                status === "completed"
-                                  ? "border-emerald-200 bg-emerald-50/30"
-                                  : status === "in_progress"
-                                    ? "border-amber-200 bg-amber-50/30"
-                                    : "border-gray-200 bg-white"
-                              }`}
-                            >
+                            <div key={lesson.id} className={`rounded-xl border p-4 transition-colors ${status === "completed" ? "border-emerald-200 bg-emerald-50/30" : status === "in_progress" ? "border-amber-200 bg-amber-50/30" : "border-gray-200 bg-white"}`}>
                               <div className="flex gap-3">
-                                <div
-                                  className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                                    status === "completed"
-                                      ? "bg-emerald-100 text-emerald-700"
-                                      : status === "in_progress"
-                                        ? "bg-amber-100 text-amber-700"
-                                        : "bg-slate-100 text-slate-600"
-                                  }`}
-                                >
-                                  {status === "completed" ? (
-                                    <Check className="h-4 w-4" />
-                                  ) : (
-                                    lessonIndex + 1
-                                  )}
+                                <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${status === "completed" ? "bg-emerald-100 text-emerald-700" : status === "in_progress" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
+                                  {status === "completed" ? <Check className="h-4 w-4" /> : lessonIndex + 1}
                                 </div>
-
                                 <div className="min-w-0 flex-1">
                                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                                    <div>
+                                    <div className="min-w-0 flex-1">
                                       <div className="flex flex-wrap items-center gap-2">
-                                        <h4 className="font-semibold text-slate-900">
-                                          {lesson.title}
-                                        </h4>
-
-                                        <span
-                                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                                            status === "completed"
-                                              ? "bg-emerald-100 text-emerald-700"
-                                              : status === "in_progress"
-                                                ? "bg-amber-100 text-amber-700"
-                                                : "bg-slate-100 text-slate-600"
-                                          }`}
-                                        >
+                                        <h4 className="break-words font-semibold text-slate-900">{lesson.title}</h4>
+                                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${status === "completed" ? "bg-emerald-100 text-emerald-700" : status === "in_progress" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
                                           {getProgressLabel(status)}
                                         </span>
                                       </div>
-
-                                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-600">
-                                        {lesson.content ||
-                                          "No lesson content available."}
+                                      <p className="mt-2 max-w-prose break-words text-sm leading-6 text-gray-600 [overflow-wrap:anywhere]">
+                                        {lesson.description || "No lesson description available."}
                                       </p>
-
                                       {lessonProgress && (
                                         <div className="mt-3 max-w-md">
                                           <div className="mb-1 flex justify-between text-xs text-gray-400">
                                             <span>Lesson progress</span>
-                                            <span>
-                                              {lessonProgress.progress_percentage}%
-                                            </span>
+                                            <span>{lessonProgress.progress_percentage}%</span>
                                           </div>
-
                                           <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
-                                            <div
-                                              className={`h-full rounded-full transition-all ${
-                                                status === "completed"
-                                                  ? "bg-emerald-600"
-                                                  : "bg-blue-600"
-                                              }`}
-                                              style={{
-                                                width: `${lessonProgress.progress_percentage}%`,
-                                              }}
-                                            />
+                                            <div className={`h-full rounded-full transition-all ${status === "completed" ? "bg-emerald-600" : "bg-blue-600"}`} style={{ width: `${lessonProgress.progress_percentage}%` }} />
                                           </div>
                                         </div>
                                       )}
                                     </div>
-
                                     <div className="flex shrink-0 flex-wrap items-center gap-2">
-                                      {lesson.video_url && (
-                                        <a
-                                          href={lesson.video_url}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
-                                        >
-                                          <PlayCircle className="h-4 w-4" />
-                                          Video
-                                          <ExternalLink className="h-3.5 w-3.5" />
+
+                                      {hasCurriculumAccess && lesson.video_url && (
+                                        <a href={lesson.video_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700">
+                                          <PlayCircle className="h-4 w-4" /> Video <ExternalLink className="h-3.5 w-3.5" />
                                         </a>
                                       )}
 
-                                      {currentEnrollment && (
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          variant={
-                                            status === "completed"
-                                              ? "outline"
-                                              : "default"
-                                          }
-                                          disabled={isActionLoading}
-                                          onClick={() =>
-                                            void handleProgressAction(
-                                              lesson.id,
-                                            )
-                                          }
-                                          className={
-                                            status === "completed"
-                                              ? "border-amber-200 text-amber-700 hover:bg-amber-50"
-                                              : status === "in_progress"
-                                                ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                                                : "bg-blue-600 text-white hover:bg-blue-700"
-                                          }
-                                        >
-                                          {isActionLoading ? (
-                                            <>
-                                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                              Saving...
-                                            </>
-                                          ) : status === "completed" ? (
-                                            <>
-                                              <Circle className="mr-2 h-4 w-4" />
-                                              Reopen
-                                            </>
-                                          ) : status === "in_progress" ? (
-                                            <>
-                                              <CheckCircle2 className="mr-2 h-4 w-4" />
-                                              Complete
-                                            </>
-                                          ) : (
-                                            <>
+                                      {currentEnrollment ? (
+                                        hasCurriculumAccess ? (
+                                          <>
+                                            <Button type="button" size="sm" onClick={() => openLesson(lesson.id)} className="bg-blue-600 text-white hover:bg-blue-700">
                                               <PlayCircle className="mr-2 h-4 w-4" />
-                                              Start lesson
-                                            </>
-                                          )}
+                                              {status === "in_progress" ? "Continue lesson" : status === "completed" ? "Review lesson" : "Start lesson"}
+                                            </Button>
+                                            {status !== "not_started" && (
+                                              <Button type="button" size="sm" variant="outline" disabled={isActionLoading} onClick={() => void handleProgressAction(lesson.id)} className={status === "completed" ? "border-amber-200 text-amber-700 hover:bg-amber-50" : "border-emerald-200 text-emerald-700 hover:bg-emerald-50"}>
+                                                {isActionLoading ? (
+                                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                ) : status === "completed" ? (
+                                                  <Circle className="mr-2 h-4 w-4" />
+                                                ) : (
+                                                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                                                )}
+                                                {status === "completed" ? "Reopen" : "Complete"}
+                                              </Button>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <Button type="button" size="sm" variant="outline" className="border-blue-200 text-blue-700" onClick={() => window.alert("يرجى الدفع وتفعيل الحساب للوصول لهذا الدرس")}>
+                                            <PlayCircle className="mr-2 h-4 w-4" /> Unlock lesson
+                                          </Button>
+                                        )
+                                      ) : (
+                                        <Button type="button" size="sm" variant="outline" className="border-blue-200 text-blue-700" onClick={() => window.alert("يرجى الدفع وتفعيل الحساب للوصول لهذا الدرس")}>
+                                          <PlayCircle className="mr-2 h-4 w-4" /> Unlock lesson
                                         </Button>
                                       )}
+
                                     </div>
                                   </div>
                                 </div>
@@ -801,72 +620,85 @@ export default function TrackDetail() {
                     )}
                   </div>
 
-                  <AssignmentList
-                    assignments={assignmentsByModule.get(module.id) ?? []}
-                    lessons={module.lessons}
-                    isLoading={isAssignmentsLoading}
-                    error={assignmentsError}
-                  />
-
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                       <FileText className="h-4 w-4 text-emerald-600" />
                       Resources
-                      <span className="text-xs font-normal text-gray-400">
-                        ({module.resources.length})
-                      </span>
+                      <span className="text-xs font-normal text-gray-400">({module.resources.length})</span>
                     </div>
 
-                    {module.resources.length === 0 ? (
-                      <div className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500">
-                        No resources have been published for this module yet.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        {module.resources.map((resource) => (
-                          <a
-                            key={resource.id}
-                            href={resource.file_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="group rounded-xl border border-gray-200 bg-white p-4 transition-all hover:border-emerald-200 hover:bg-emerald-50/30"
-                          >
-                            <div className="flex items-start gap-3">
-                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                                <FileText className="h-4 w-4" />
-                              </div>
-
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <p className="font-medium text-slate-900 group-hover:text-emerald-700">
-                                      {resource.title}
-                                    </p>
-
-                                    <p className="mt-1 text-xs uppercase tracking-wide text-gray-400">
-                                      {resource.resource_type}
-                                    </p>
+                    {hasCurriculumAccess ? (
+                      module.resources.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500">
+                          No resources have been published for this module yet.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                          {module.resources.map((resource) => (
+                            <a key={resource.id} href={resource.file_url} target="_blank" rel="noreferrer" className="group rounded-xl border border-gray-200 bg-white p-4 transition-all hover:border-emerald-200 hover:bg-emerald-50/30">
+                              <div className="flex items-start gap-3">
+                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                                  <FileText className="h-4 w-4" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <p className="font-medium text-slate-900 group-hover:text-emerald-700">{resource.title}</p>
+                                      <p className="mt-1 text-xs uppercase tracking-wide text-gray-400">{resource.resource_type}</p>
+                                    </div>
+                                    <ExternalLink className="h-4 w-4 shrink-0 text-gray-400 group-hover:text-emerald-600" />
                                   </div>
-
-                                  <ExternalLink className="h-4 w-4 shrink-0 text-gray-400 group-hover:text-emerald-600" />
                                 </div>
                               </div>
-                            </div>
-                          </a>
-                        ))}
+                            </a>
+                          ))}
+                        </div>
+                      )
+                    ) : (
+                      <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                        Resources unlock after payment and activation.
                       </div>
                     )}
-                  </div>
-
-                  <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                    <CheckCircle2 className="h-4 w-4 shrink-0" />
-                    This module is available in the published curriculum.
                   </div>
                 </CardContent>
               </Card>
             ))
           )}
         </section>
+
+        {!isEnrollmentLoading && track.is_premium && !hasCurriculumAccess && (
+          <section id="payment-gateway" className="rounded-2xl border border-blue-200 bg-white p-6 shadow-sm md:p-8">
+            <div className="mb-6">
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-blue-600">
+                Unlock Full Access
+              </p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
+                Ready to start this track?
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
+                Preview the full syllabus above, then complete payment to
+                unlock lesson content, videos, assignments, and resources.
+              </p>
+            </div>
+
+            {!currentEnrollment ? (
+              <div className="mb-4">
+                <EnrollmentPanel
+                  trackId={numericTrackId}
+                  enrollment={currentEnrollment}
+                  onEnrollmentCreated={handleEnrollmentCreated}
+                  onEnrollmentSuccess={() => setShowPayment(true)}
+                />
+              </div>
+            ) : null}
+
+            <PaymentCheckout
+              track={track}
+              enrollment={currentEnrollment}
+            />
+          </section>
+        )}
+
       </div>
     </div>
   );

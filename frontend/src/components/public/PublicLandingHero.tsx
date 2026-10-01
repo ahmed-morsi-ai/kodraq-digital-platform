@@ -39,7 +39,7 @@ export default function PublicLandingHero() {
               </div>
 
               <h2 className="mb-2 text-3xl font-bold text-slate-900">
-                أنا متدرب
+                تحوّل مهني من الصفر إلى الإتقان
               </h2>
 
               <h3 className="mb-6 text-lg font-bold uppercase tracking-widest text-[#5B9BD5]">
@@ -47,7 +47,10 @@ export default function PublicLandingHero() {
               </h3>
 
               <p className="mb-8 leading-relaxed text-slate-600">
-                ابدأ رحلتك مع برامج تدريبية مكثفة في Technical Tracks حقيقية، وتعلّم من خلال Practical Tasks وProjects تساعدك على بناء مهاراتك والاستعداد لسوق العمل.
+                ابدأ بأساسيات البرمجة وتدرّج حتى بناء أنظمة Backend وAI/RAG ونشر مشروع تخرج متكامل. المتفوقون أصحاب النتائج المرتفعة لديهم احتمالية عالية للترشيح وفرص التوظيف، مع ضمان استرداد 100% من رسوم البرنامج.
+              </p>
+              <p className="mb-6 text-sm font-bold text-slate-800">
+                البرنامج الأساسي: 5,600 جنيه مصري
               </p>
             </div>
 

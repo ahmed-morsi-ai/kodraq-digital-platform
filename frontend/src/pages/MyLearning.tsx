@@ -18,7 +18,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import GraduationClaimCard from "@/components/GraduationClaimCard";
 import { enrollmentService } from "@/services/enrollment.service";
 import { trackService } from "@/services/track.service";
 import type {
@@ -54,147 +53,133 @@ export default function MyLearning() {
   >({});
 
   const loadLearning = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+    const enrollmentsData = await enrollmentService.getMyEnrollments();
+    const activeEnrollments = enrollmentsData.filter(
+      (enrollment) => enrollment.status !== "cancelled",
+    );
 
-    try {
-      const enrollmentsData = await enrollmentService.getMyEnrollments();
-
-      const activeEnrollments = enrollmentsData.filter(
-        (enrollment: Enrollment) => enrollment.status !== "cancelled",
-      );
-
-      setEnrollments(activeEnrollments);
-
-      const initialStats: Record<number, EnrollmentStats> = {};
-
-      activeEnrollments.forEach((enrollment: Enrollment) => {
-        initialStats[enrollment.id] = {
-          totalLessons: 0,
-          completedLessons: 0,
-          loading: true,
-        };
-      });
-
-      setStatsMap(initialStats);
-
-      const detailResults = await Promise.all(
-        activeEnrollments.map(
-          async (enrollment: Enrollment): Promise<{
-            enrollment: Enrollment;
-            detail: EnrollmentDetail;
-          }> => {
-            const detail = await enrollmentService.getEnrollment(
-              enrollment.id,
-            );
-
-            return {
-              enrollment,
-              detail,
-            };
-          },
-        ),
-      );
-
-      const trackResults = await Promise.all(
-        detailResults
-          .filter(({ detail }) => detail.track)
-          .map(async ({ enrollment, detail }) => {
-            const trackId = detail.track?.id;
-
-            if (!trackId) {
-              return null;
-            }
-
-            const [curriculum, progress] = await Promise.all([
-              trackService.getCurriculum(trackId),
-              enrollmentService.getProgress(enrollment.id),
-            ]);
-
-            return {
-              enrollment,
-              track: curriculum,
-              progress,
-            };
-          }),
-      );
-
-      const validResults = trackResults.filter(
-        (
-          result,
-        ): result is {
+    const detailResults = await Promise.all(
+      activeEnrollments.map(
+        async (enrollment): Promise<{
           enrollment: Enrollment;
-          track: TrackCurriculum;
-          progress: LessonProgress[];
-        } => result !== null,
-      );
+          detail: EnrollmentDetail;
+        }> => ({
+          enrollment,
+          detail: await enrollmentService.getEnrollment(enrollment.id),
+        }),
+      ),
+    );
 
-      setTracks(validResults.map((result) => result.track));
+    const trackResults = await Promise.all(
+      detailResults
+        .filter(({ detail }) => detail.track)
+        .map(async ({ enrollment, detail }) => {
+          const trackId = detail.track?.id;
+          if (!trackId) return null;
 
-      const nextStats: Record<number, EnrollmentStats> = {};
+          const [curriculum, progress] = await Promise.all([
+            trackService.getCurriculum(trackId),
+            enrollmentService.getProgress(enrollment.id),
+          ]);
+          return { enrollment, track: curriculum, progress };
+        }),
+    );
 
-      validResults.forEach(({ enrollment, track, progress }) => {
-        const totalLessons = track.modules.reduce(
+    const validResults = trackResults.filter(
+      (
+        result,
+      ): result is {
+        enrollment: Enrollment;
+        track: TrackCurriculum;
+        progress: LessonProgress[];
+      } => result !== null,
+    );
+
+    const nextStats: Record<number, EnrollmentStats> = {};
+    validResults.forEach(({ enrollment, track, progress }) => {
+      nextStats[enrollment.id] = {
+        totalLessons: track.modules.reduce(
           (sum, module) => sum + module.lessons.length,
           0,
-        );
-
-        const completedLessons = progress.filter(
+        ),
+        completedLessons: progress.filter(
           (item) => item.status === "completed",
-        ).length;
+        ).length,
+        loading: false,
+      };
+    });
 
+    activeEnrollments.forEach((enrollment) => {
+      if (!nextStats[enrollment.id]) {
         nextStats[enrollment.id] = {
-          totalLessons,
-          completedLessons,
+          totalLessons: 0,
+          completedLessons: 0,
           loading: false,
         };
-      });
+      }
+    });
 
-      activeEnrollments.forEach((enrollment: Enrollment) => {
-        if (!nextStats[enrollment.id]) {
-          nextStats[enrollment.id] = {
-            totalLessons: 0,
-            completedLessons: 0,
-            loading: false,
-          };
-        }
-      });
+    return {
+      enrollments: activeEnrollments,
+      tracks: validResults.map((result) => result.track),
+      statsMap: nextStats,
+    };
+  }, []);
 
-      setStatsMap(nextStats);
-    } catch (requestError) {
-      console.error("Failed to load learning data", requestError);
-      setError(
-        "Unable to load your enrollments. Please try again later.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
+  const applyLearningData = useCallback(
+    (data: Awaited<ReturnType<typeof loadLearning>>) => {
+      setEnrollments(data.enrollments);
+      setTracks(data.tracks);
+      setStatsMap(data.statsMap);
+      setError(null);
+    },
+    [],
+  );
+
+  const applyLearningError = useCallback((requestError: unknown) => {
+    console.error("Failed to load learning data", requestError);
+    setError("Unable to load your enrollments. Please try again later.");
   }, []);
 
   useEffect(() => {
-    void loadLearning();
-  }, [loadLearning]);
+    let active = true;
+    void loadLearning()
+      .then((data) => {
+        if (active) applyLearningData(data);
+      })
+      .catch((requestError: unknown) => {
+        if (active) applyLearningError(requestError);
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [applyLearningData, applyLearningError, loadLearning]);
+
+  const retryLearning = () => {
+    setIsLoading(true);
+    setError(null);
+    void loadLearning()
+      .then(applyLearningData)
+      .catch(applyLearningError)
+      .finally(() => setIsLoading(false));
+  };
 
   const enrolledTracksData = useMemo(() => {
     return enrollments
       .map((enrollment) => {
-        const track = tracks.find(
-          (item) => item.id === enrollment.track_id,
-        );
-
-        if (!track) {
-          return null;
-        }
+        const track = tracks.find((item) => item.id === enrollment.track_id);
+        if (!track) return null;
 
         const stats = statsMap[enrollment.id];
         const isStatsLoading = !stats || stats.loading;
         const totalLessons = stats?.totalLessons ?? 0;
         const completedLessons = stats?.completedLessons ?? 0;
-
-        const progressPercentage =
-          totalLessons > 0
-            ? Math.round((completedLessons / totalLessons) * 100)
-            : 0;
+        const progressPercentage = totalLessons > 0
+          ? Math.round((completedLessons / totalLessons) * 100)
+          : 0;
 
         return {
           enrollment,
@@ -205,9 +190,7 @@ export default function MyLearning() {
           isStatsLoading,
         };
       })
-      .filter(
-        (item): item is EnrolledTrackData => item !== null,
-      );
+      .filter((item): item is EnrolledTrackData => item !== null);
   }, [enrollments, tracks, statsMap]);
 
   if (isLoading) {
@@ -251,7 +234,7 @@ export default function MyLearning() {
               <Button
                 type="button"
                 className="mt-6 gap-2 bg-blue-600 text-white hover:bg-blue-700"
-                onClick={() => void loadLearning()}
+                onClick={retryLearning}
               >
                 <RefreshCw className="h-4 w-4" />
                 Try again
@@ -378,10 +361,10 @@ export default function MyLearning() {
                 </CardContent>
 
                 <div className="px-6 pb-5">
-                  <GraduationClaimCard
-                    trackId={data.track.id}
-                    trackName={data.track.name}
-                  />
+                  <Link to={`/tracks/${data.track.id}/graduation`} className="flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm font-medium text-blue-800 hover:bg-blue-100">
+                    <span>View graduation gates and status</span>
+                    <GraduationCap aria-hidden="true" className="h-5 w-5 shrink-0" />
+                  </Link>
                 </div>
 
                 <CardFooter className="flex flex-col gap-2 pt-0 sm:flex-row">

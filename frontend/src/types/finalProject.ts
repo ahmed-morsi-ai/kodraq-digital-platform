@@ -1,10 +1,12 @@
-﻿export type ProjectSubmissionStatus =
+export type ProjectSubmissionStatus =
   | "DRAFT"
   | "SUBMITTED"
   | "UNDER_REVIEW"
   | "CHANGES_REQUIRED"
   | "APPROVED"
   | "REJECTED";
+
+export type ProjectReviewDecision = Exclude<ProjectSubmissionStatus, "DRAFT" | "SUBMITTED">;
 
 export interface ProjectRequirement {
   id: number;
@@ -32,6 +34,7 @@ export interface ProjectReview {
   reviewer_id: number;
   score: number | null;
   feedback: string | null;
+  status_decision: ProjectReviewDecision;
   created_at: string;
   updated_at: string;
 }
@@ -63,6 +66,7 @@ export interface ProjectSubmissionUpdate extends ProjectSubmissionCreate {
 }
 
 export interface ProjectReviewCreate {
-  score: number;
+  score?: number | null;
   feedback: string;
+  status_decision?: ProjectReviewDecision | null;
 }

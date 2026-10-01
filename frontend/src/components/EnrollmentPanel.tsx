@@ -12,6 +12,7 @@ interface EnrollmentPanelProps {
   trackId: number;
   enrollment?: Enrollment;
   onEnrollmentCreated: (enrollment: Enrollment) => void;
+  onEnrollmentSuccess?: () => void;
 }
 
 function getErrorMessage(error: unknown) {
@@ -39,6 +40,7 @@ export default function EnrollmentPanel({
   trackId,
   enrollment,
   onEnrollmentCreated,
+  onEnrollmentSuccess,
 }: EnrollmentPanelProps) {
   const navigate = useNavigate();
 
@@ -61,6 +63,7 @@ export default function EnrollmentPanel({
       });
 
       onEnrollmentCreated(createdEnrollment);
+      onEnrollmentSuccess?.();
       setSuccess(true);
     } catch (requestError) {
       console.error("Enrollment failed", requestError);

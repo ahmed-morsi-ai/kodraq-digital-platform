@@ -1,446 +1,155 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { isAxiosError } from "axios";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Clock3,
-  Loader2,
-  ShieldAlert,
-} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Clock3, Loader2, ShieldAlert } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/context/AuthContext";
+import { canTakeQuiz, formatQuizTime, quizError, quizPayload, remainingQuizSeconds } from "@/lib/quizzes";
 import { quizService } from "@/services/quiz.service";
-import type {
-  QuizAttempt,
-  QuizAttemptSubmit,
-  StudentQuiz,
-} from "@/types/quiz";
-
-function getErrorMessage(error: unknown) {
-  if (isAxiosError(error)) {
-    const detail = error.response?.data?.detail;
-
-    if (typeof detail === "string") {
-      return detail;
-    }
-  }
-
-  return "Something went wrong while loading the quiz.";
-}
-
-function formatTime(seconds: number) {
-  const safeSeconds = Math.max(seconds, 0);
-  const minutes = Math.floor(safeSeconds / 60);
-  const remainingSeconds = safeSeconds % 60;
-
-  return `${String(minutes).padStart(2, "0")}:${String(
-    remainingSeconds,
-  ).padStart(2, "0")}`;
-}
+import type { QuizAttempt, StudentQuiz } from "@/types/quiz";
 
 export default function QuizTaker() {
-  const { quizId: quizIdParam, attemptId: attemptIdParam } =
-    useParams<{
-      quizId: string;
-      attemptId: string;
-    }>();
+  const { quizId, attemptId } = useParams<{ quizId: string; attemptId: string }>();
+  const { user } = useAuth();
+  if (!canTakeQuiz(user)) return <p role="alert" className="p-6">Only students can take quizzes.</p>;
+  return <ActiveQuiz key={`${quizId}-${attemptId}-${user?.id}`} quizId={Number(quizId)} attemptId={Number(attemptId)} userId={Number(user?.id)} />;
+}
+
+function ActiveQuiz({ quizId, attemptId, userId }: { quizId: number; attemptId: number; userId: number }) {
   const navigate = useNavigate();
-
-  const quizId = Number(quizIdParam);
-  const attemptId = Number(attemptIdParam);
-
   const [quiz, setQuiz] = useState<StudentQuiz | null>(null);
   const [attempt, setAttempt] = useState<QuizAttempt | null>(null);
   const [answers, setAnswers] = useState<Record<number, number | null>>({});
-  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(
-    null,
-  );
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const submittedRef = useRef(false);
-
-  const orderedQuestions = useMemo(() => {
-    return [...(quiz?.questions ?? [])].sort(
-      (left, right) => left.ordering - right.ordering,
-    );
-  }, [quiz]);
+  const [revision, setRevision] = useState(0);
+  const [now, setNow] = useState(Date.now);
+  const busy = useRef(false);
+  const mounted = useRef(true);
+  const automaticSubmit = useRef(false);
+  const integrityReason = useRef<string | null>(null);
+  const remaining = remainingQuizSeconds(attempt?.deadline_at ?? null, now);
+  const questions = quiz?.questions ?? [];
 
   const navigateToResults = useCallback(() => {
     navigate(`/quiz-attempts/${attemptId}/results`, { replace: true });
   }, [attemptId, navigate]);
 
-  const submitQuiz = useCallback(
-    async (flagged: boolean, flagReason: string | null) => {
-      if (!attempt || submittedRef.current) {
-        return;
-      }
-
-      submittedRef.current = true;
-      setSubmitting(true);
-      setError(null);
-
-      const payload: QuizAttemptSubmit = {
-        answers: orderedQuestions.map(({ question }) => ({
-          question_id: question.id,
-          selected_option_id: answers[question.id] ?? null,
-        })),
-        is_flagged: flagged,
-        flag_reason: flagReason,
-      };
-
-      try {
-        await quizService.submitAttempt(attempt.id, payload);
-        navigateToResults();
-      } catch (requestError) {
-        if (flagged) {
-          navigateToResults();
-          return;
-        }
-
-        submittedRef.current = false;
-        setSubmitting(false);
-        setError(getErrorMessage(requestError));
-      }
-    },
-    [
-      answers,
-      attempt,
-      navigateToResults,
-      orderedQuestions,
-    ],
-  );
-
   useEffect(() => {
-    let cancelled = false;
-
+    const controller = new AbortController();
+    mounted.current = true;
     async function load() {
-      if (
-        !Number.isInteger(quizId) ||
-        !Number.isInteger(attemptId) ||
-        quizId <= 0 ||
-        attemptId <= 0
-      ) {
+      if (!Number.isSafeInteger(quizId) || !Number.isSafeInteger(attemptId) || quizId <= 0 || attemptId <= 0) {
         setError("Invalid quiz attempt.");
         setLoading(false);
         return;
       }
-
-      setLoading(true);
-      setError(null);
-
       try {
-        const [quizData, attemptData] = await Promise.all([
-          quizService.getQuiz(quizId),
-          quizService.getAttempt(attemptId),
-        ]);
-
-        if (cancelled) {
+        // Read the attempt first so a completed attempt can still show its
+        // stored results even when its quiz has since been deactivated.
+        const record = await quizService.getAttempt(attemptId, controller.signal);
+        if (controller.signal.aborted) return;
+        if (record.quiz_id !== quizId || record.user_id !== userId) {
+          setError("This attempt does not belong to you or the selected quiz.");
           return;
         }
-
-        if (attemptData.quiz_id !== quizData.id) {
-          setError("This quiz attempt does not belong to the selected quiz.");
-          return;
-        }
-
-        if (attemptData.status === "COMPLETED") {
-          navigateToResults();
-          return;
-        }
-
-        setQuiz(quizData);
-        setAttempt(attemptData);
-
-        const initialAnswers: Record<number, number | null> = {};
-
-        for (const questionLink of quizData.questions) {
-          initialAnswers[questionLink.question.id] = null;
-        }
-
-        for (const answer of attemptData.answers) {
-          initialAnswers[answer.question_id] =
-            answer.selected_option_id ?? null;
-        }
-
-        setAnswers(initialAnswers);
-      } catch (requestError) {
-        if (!cancelled) {
-          setError(getErrorMessage(requestError));
-        }
+        if (record.status === "COMPLETED") { navigateToResults(); return; }
+        const paper = await quizService.getQuiz(quizId, controller.signal);
+        if (controller.signal.aborted) return;
+        setQuiz(paper);
+        setAttempt(record);
+        setAnswers(Object.fromEntries(record.answers.map((answer) => [answer.question_id, answer.selected_option_id])));
+        setNow(Date.now());
+      } catch (error) {
+        if (!controller.signal.aborted) setError(quizError(error));
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!controller.signal.aborted) setLoading(false);
       }
     }
-
     void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [attemptId, navigateToResults, quizId]);
+    return () => { mounted.current = false; controller.abort(); };
+  }, [attemptId, quizId, userId, navigateToResults, revision]);
 
   useEffect(() => {
-    if (!attempt || !quiz?.time_limit_minutes) {
-      setRemainingSeconds(null);
-      return;
+    if (!attempt?.deadline_at) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [attempt?.deadline_at]);
+
+  const submit = useCallback(async (flagReason: string | null = null) => {
+    if (!attempt || !quiz || busy.current) return;
+    if (flagReason) integrityReason.current ??= flagReason;
+    busy.current = true;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const record = await quizService.submitAndConfirm(attempt.id, quizPayload(quiz.questions, answers, integrityReason.current));
+      if (mounted.current && record.status === "COMPLETED") navigateToResults();
+    } catch (error) {
+      if (mounted.current) setError(`${quizError(error)} Your answers are still on this page. Retry submitting.`);
+    } finally {
+      busy.current = false;
+      if (mounted.current) setSubmitting(false);
     }
-
-    const durationSeconds = quiz.time_limit_minutes * 60;
-    const startedAt = new Date(attempt.started_at).getTime();
-
-    function updateRemaining() {
-      const elapsedSeconds = Math.floor(
-        (Date.now() - startedAt) / 1000,
-      );
-      const nextRemaining = Math.max(
-        durationSeconds - elapsedSeconds,
-        0,
-      );
-
-      setRemainingSeconds(nextRemaining);
-    }
-
-    updateRemaining();
-
-    const timerId = window.setInterval(updateRemaining, 1000);
-
-    return () => {
-      window.clearInterval(timerId);
-    };
-  }, [attempt, quiz]);
+  }, [answers, attempt, quiz, navigateToResults]);
 
   useEffect(() => {
-    if (remainingSeconds !== 0 || !attempt || submittedRef.current) {
-      return;
-    }
-
-    void submitQuiz(true, "TIME_LIMIT_EXCEEDED");
-  }, [attempt, remainingSeconds, submitQuiz]);
+    if (remaining !== 0 || !attempt || automaticSubmit.current) return;
+    const timer = window.setTimeout(() => {
+      automaticSubmit.current = true;
+      // Only the server decides whether its deadline has expired.
+      void submit();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [remaining, attempt, submit]);
 
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        void submitQuiz(true, "VISIBILITY_HIDDEN");
-      }
+    if (!attempt || loading) return;
+    const flag = (reason: string) => {
+      if (automaticSubmit.current || busy.current) return;
+      automaticSubmit.current = true;
+      void submit(reason);
     };
+    const visibility = () => { if (document.visibilityState === "hidden") flag("VISIBILITY_HIDDEN"); };
+    const blur = () => flag("WINDOW_BLUR");
+    document.addEventListener("visibilitychange", visibility);
+    window.addEventListener("blur", blur);
+    return () => { document.removeEventListener("visibilitychange", visibility); window.removeEventListener("blur", blur); };
+  }, [attempt, loading, submit]);
 
-    const handleWindowBlur = () => {
-      void submitQuiz(true, "WINDOW_BLUR");
-    };
+  if (loading) return <div role="status" className="flex min-h-[60vh] items-center justify-center gap-2 text-slate-500"><Loader2 className="h-5 w-5 animate-spin" />Loading quiz...</div>;
+  if (!quiz || !attempt) return <div className="mx-auto max-w-3xl p-6"><Card>
+    <CardHeader><CardTitle>Quiz unavailable</CardTitle></CardHeader>
+    <CardContent className="space-y-4"><p role="alert">{error ?? "Unable to load this quiz."}</p><Button onClick={() => { setError(null); setLoading(true); setRevision((value) => value + 1); }}>Retry</Button></CardContent>
+  </Card></div>;
 
-    document.addEventListener(
-      "visibilitychange",
-      handleVisibilityChange,
-    );
-    window.addEventListener("blur", handleWindowBlur);
-
-    return () => {
-      document.removeEventListener(
-        "visibilitychange",
-        handleVisibilityChange,
-      );
-      window.removeEventListener("blur", handleWindowBlur);
-    };
-  }, [submitQuiz]);
-
-  if (loading) {
-    return (
-      <div className="mx-auto flex min-h-[60vh] max-w-4xl items-center justify-center px-4">
-        <div className="flex items-center text-sm text-slate-500">
-          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-          Loading quiz...
+  const answered = questions.filter(({ question_id }) => answers[question_id] != null).length;
+  return <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6">
+    <div className="mx-auto max-w-4xl space-y-5">
+      <header className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">Assessment</p>
+        <h1 className="mt-1 text-2xl font-bold text-slate-900">{quiz.title}</h1>
+        {quiz.description && <p className="mt-2 text-sm text-slate-600">{quiz.description}</p>}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+          <span>Passing score: {attempt.passing_score ?? quiz.passing_score}%</span>
+          <span role="timer" aria-label="Time remaining" className={`flex items-center gap-2 font-semibold ${remaining !== null && remaining <= 60 ? "text-red-700" : "text-blue-700"}`}><Clock3 className="h-4 w-4" />{remaining === null ? "No time limit" : formatQuizTime(remaining)}</span>
         </div>
-      </div>
-    );
-  }
-
-  if (error || !quiz || !attempt) {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
-        <Card className="border-red-200">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-red-700">
-              <AlertTriangle className="h-5 w-5" />
-              Quiz unavailable
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-slate-600">
-              {error ?? "Unable to load this quiz attempt."}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-4xl">
-        <div className="mb-6 rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-600">
-                Assessment
-              </p>
-              <h1 className="mt-1 text-2xl font-bold text-slate-900">
-                {quiz.title}
-              </h1>
-              {quiz.description ? (
-                <p className="mt-2 text-sm text-slate-500">
-                  {quiz.description}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
-              {remainingSeconds !== null ? (
-                <div
-                  className={[
-                    "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold",
-                    remainingSeconds <= 60
-                      ? "bg-red-50 text-red-700"
-                      : "bg-blue-50 text-blue-700",
-                  ].join(" ")}
-                >
-                  <Clock3 className="h-4 w-4" />
-                  {formatTime(remainingSeconds)}
-                </div>
-              ) : (
-                <span className="text-sm text-slate-500">
-                  No time limit
-                </span>
-              )}
-
-              <div className="text-xs text-slate-500">
-                Passing score: {quiz.passing_score}%
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-          <div>
-            <p className="font-semibold">Assessment integrity is enabled.</p>
-            <p className="mt-1">
-              Leaving the quiz window or switching away from this page
-              will automatically submit and flag the attempt.
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-5">
-          {orderedQuestions.map(({ question }, index) => (
-            <Card key={question.id}>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Question {index + 1}
-                </CardTitle>
-                <CardDescription>
-                  {question.points} point{question.points === 1 ? "" : "s"}
-                </CardDescription>
-              </CardHeader>
-
-              <CardContent>
-                <p className="mb-5 whitespace-pre-wrap text-sm leading-6 text-slate-900 sm:text-base">
-                  {question.text}
-                </p>
-
-                <div className="space-y-3">
-                  {question.options.map((option) => {
-                    const selected =
-                      answers[question.id] === option.id;
-
-                    return (
-                      <label
-                        key={option.id}
-                        className={[
-                          "flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition",
-                          selected
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-slate-200 hover:border-blue-200 hover:bg-slate-50",
-                        ].join(" ")}
-                      >
-                        <input
-                          type="radio"
-                          name={`question-${question.id}`}
-                          value={option.id}
-                          checked={selected}
-                          disabled={submitting}
-                          onChange={() =>
-                            setAnswers((current) => ({
-                              ...current,
-                              [question.id]: option.id,
-                            }))
-                          }
-                          className="mt-1 h-4 w-4 accent-blue-600"
-                        />
-                        <span className="text-sm leading-6 text-slate-800">
-                          {option.text}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {error ? (
-          <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            {error}
-          </div>
-        ) : null}
-
-        <div className="sticky bottom-0 mt-6 border-t border-slate-200 bg-slate-50/95 py-4 backdrop-blur">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-slate-500">
-              Review your answers before submitting.
-            </p>
-
-            <Button
-              type="button"
-              size="lg"
-              disabled={submitting}
-              onClick={() =>
-                void submitQuiz(false, null)
-              }
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Submitting...
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                  Submit Quiz
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
+      </header>
+      <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><ShieldAlert className="h-5 w-5 shrink-0" /><p>Leaving this window or switching tabs automatically submits and flags the attempt. A flagged or expired attempt receives zero. Keep this page open until you submit.</p></div>
+      {questions.map(({ question }, index) => <fieldset key={question.id} disabled={submitting || remaining === 0} className="rounded-xl border border-slate-200 bg-white p-5">
+        <legend className="px-2 font-semibold">Question {index + 1} <span className="font-normal text-slate-500">({question.points} points)</span></legend>
+        <p className="mb-4 whitespace-pre-wrap leading-7">{question.text}</p>
+        <div className="space-y-3">{question.options.map((option) => <label key={option.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 ${answers[question.id] === option.id ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}>
+          <input type="radio" name={`question-${question.id}`} value={option.id} checked={answers[question.id] === option.id} onChange={() => setAnswers((current) => ({ ...current, [question.id]: option.id }))} className="mt-1 h-4 w-4 accent-blue-600" />
+          <span className="whitespace-pre-wrap text-sm leading-6">{option.text}</span>
+        </label>)}</div>
+      </fieldset>)}
+      {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+      <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 bg-slate-50/95 py-4 backdrop-blur">
+        <p className="text-sm text-slate-600">{answered} of {questions.length} answered. Unanswered questions receive zero.</p>
+        <Button size="lg" disabled={submitting} onClick={() => void submit()}>{submitting ? "Submitting..." : "Submit Quiz"}</Button>
       </div>
     </div>
-  );
+  </main>;
 }

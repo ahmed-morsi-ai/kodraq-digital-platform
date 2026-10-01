@@ -97,10 +97,6 @@ export default function Dashboard() {
             <p className="text-xs text-gray-500">Explore technical track modules and assignments.</p>
           </div>
           <div className="p-4 rounded-lg border border-gray-100 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer space-y-2">
-            <h4 className="font-medium text-slate-900">AI Tutor RAG Hub</h4>
-            <p className="text-xs text-gray-500">Interact with your dedicated track-specific AI assistant.</p>
-          </div>
-          <div className="p-4 rounded-lg border border-gray-100 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer space-y-2">
             <h4 className="font-medium text-slate-900">Project Submissions</h4>
             <p className="text-xs text-gray-500">Upload and track your graduation capstone requirements.</p>
           </div>

@@ -1,18 +1,22 @@
-import type { Assignment } from "@/types/assignment";
+import type { Assignment, AssignmentCreate, AssignmentFilters, AssignmentUpdate } from "@/types/assignment";
 import { api } from "./api";
 
-export const assignmentService = {
-  async getByTrack(
-    trackId: number,
-    limit = 100,
-  ): Promise<Assignment[]> {
-    const response = await api.get<Assignment[]>("/api/v1/assignments", {
-      params: {
-        track_id: trackId,
-        limit,
-      },
-    });
+const endpoint = "/api/v1/assignments";
 
-    return response.data;
+export const assignmentService = {
+  async list(filters: AssignmentFilters = {}, signal?: AbortSignal): Promise<Assignment[]> {
+    return (await api.get<Assignment[]>(endpoint, { params: filters, signal })).data;
+  },
+  async get(id: number, signal?: AbortSignal): Promise<Assignment> {
+    return (await api.get<Assignment>(`${endpoint}/${id}`, { signal })).data;
+  },
+  async create(data: AssignmentCreate): Promise<Assignment> {
+    return (await api.post<Assignment>(endpoint, data)).data;
+  },
+  async update(id: number, data: AssignmentUpdate): Promise<Assignment> {
+    return (await api.patch<Assignment>(`${endpoint}/${id}`, data)).data;
+  },
+  async remove(id: number): Promise<void> {
+    await api.delete(`${endpoint}/${id}`);
   },
 };

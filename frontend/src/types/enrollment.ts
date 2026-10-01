@@ -2,6 +2,7 @@ import type { Track } from "./track";
 
 export type EnrollmentStatus =
   | "active"
+  | "pending"
   | "completed"
   | "cancelled"
   | "pending_payment";
@@ -64,4 +65,10 @@ export interface EnrollmentUpdate {
 export interface EnrollmentDetail extends Enrollment {
   track?: Track | null;
   progress: StudentProgressDetail[];
+}
+
+export interface AdminEnrollment extends Enrollment {
+  student_name: string;
+  student_email: string;
+  track_name: string;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { isAxiosError } from "axios";
+import { quizError, formatQuizScore } from "@/lib/quizzes";
+import { useAuth } from "@/context/AuthContext";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -20,18 +21,6 @@ import {
 import { quizService } from "@/services/quiz.service";
 import type { QuizResult } from "@/types/quiz";
 
-function getErrorMessage(error: unknown) {
-  if (isAxiosError(error)) {
-    const detail = error.response?.data?.detail;
-
-    if (typeof detail === "string") {
-      return detail;
-    }
-  }
-
-  return "Unable to load quiz results.";
-}
-
 function formatDuration(seconds: number) {
   const safeSeconds = Math.max(Math.round(seconds), 0);
   const minutes = Math.floor(safeSeconds / 60);
@@ -48,14 +37,20 @@ export default function QuizResults() {
   const { attemptId: attemptIdParam } = useParams<{
     attemptId: string;
   }>();
-  const attemptId = Number(attemptIdParam);
+  const { user } = useAuth();
+  return <AttemptResults key={`${attemptIdParam}-${user?.id}`} attemptId={Number(attemptIdParam)} />;
+}
+
+function AttemptResults({ attemptId }: { attemptId: number }) {
 
   const [result, setResult] = useState<QuizResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [revision, setRevision] = useState(0);
+
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
 
     async function load() {
       if (!Number.isInteger(attemptId) || attemptId <= 0) {
@@ -68,17 +63,17 @@ export default function QuizResults() {
       setError(null);
 
       try {
-        const data = await quizService.getResult(attemptId);
+        const data = await quizService.getResult(attemptId, controller.signal);
 
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setResult(data);
         }
       } catch (requestError) {
-        if (!cancelled) {
-          setError(getErrorMessage(requestError));
+        if (!controller.signal.aborted) {
+          setError(quizError(requestError));
         }
       } finally {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setLoading(false);
         }
       }
@@ -87,9 +82,9 @@ export default function QuizResults() {
     void load();
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [attemptId]);
+  }, [attemptId, revision]);
 
   if (loading) {
     return (
@@ -115,12 +110,17 @@ export default function QuizResults() {
             <p className="text-sm text-slate-600">
               {error ?? "Unable to load this result."}
             </p>
+            <Button className="mt-4" onClick={() => { setLoading(true); setError(null); setRevision((value) => value + 1); }}>Retry</Button>
           </CardContent>
         </Card>
       </div>
     );
   }
 
+  return <QuizResultView result={result} />;
+}
+
+export function QuizResultView({ result }: { result: QuizResult }) {
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-4xl">
@@ -150,7 +150,7 @@ export default function QuizResults() {
                 ].join(" ")}
               >
                 <div className="text-3xl font-bold">
-                  {Math.round(result.percentage)}%
+                  {formatQuizScore(result.percentage)}
                 </div>
                 <div className="text-xs font-semibold uppercase tracking-wide">
                   {result.passed ? "Passed" : "Not passed"}
@@ -166,16 +166,16 @@ export default function QuizResults() {
                   Score
                 </p>
                 <p className="mt-1 text-xl font-semibold text-slate-900">
-                  {Math.round(result.score)}%
+                  {formatQuizScore(result.score)}
                 </p>
               </div>
 
               <div className="rounded-xl bg-slate-50 p-4">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Maximum
+                  Points earned
                 </p>
                 <p className="mt-1 text-xl font-semibold text-slate-900">
-                  {result.max_score}
+                  {result.earned_points} / {result.max_score}
                 </p>
               </div>
 
@@ -199,8 +199,7 @@ export default function QuizResults() {
               <div>
                 <p className="font-semibold">Attempt flagged</p>
                 <p className="mt-1">
-                  {result.flag_reason ??
-                    "This attempt was flagged by the assessment integrity system."}
+                  {result.flag_reason === "TIME_LIMIT_EXCEEDED" ? "The time limit expired. This attempt received zero." : "This attempt received zero because it was flagged by the assessment integrity system."}
                 </p>
               </div>
             </CardContent>
@@ -229,7 +228,7 @@ export default function QuizResults() {
                         Question {index + 1}
                       </p>
                       <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                        {question.text}
+                        {question.question_text}
                       </p>
                     </div>
 

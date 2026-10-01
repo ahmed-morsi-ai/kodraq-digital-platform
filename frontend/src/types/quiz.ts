@@ -25,6 +25,7 @@ export interface StudentQuiz {
   title: string;
   description: string | null;
   track_id: number | null;
+  module_id: number | null;
   lesson_id: number | null;
   passing_score: number;
   time_limit_minutes: number | null;
@@ -62,6 +63,8 @@ export interface QuizAttempt {
   status: QuizAttemptStatus;
   started_at: string;
   completed_at: string | null;
+  deadline_at: string | null;
+  passing_score: number | null;
   created_at: string;
   updated_at: string;
   answers: QuizAnswerResponse[];
@@ -69,7 +72,7 @@ export interface QuizAttempt {
 
 export interface QuizResultQuestion {
   question_id: number;
-  text: string;
+  question_text: string;
   points: number;
   selected_option_id: number | null;
   selected_option_text: string | null;
@@ -83,6 +86,7 @@ export interface QuizResult {
   quiz_id: number;
   score: number;
   max_score: number;
+  earned_points: number;
   percentage: number;
   passed: boolean;
   time_taken_seconds: number;

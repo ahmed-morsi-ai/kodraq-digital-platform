@@ -21,3 +21,16 @@ export interface Assignment {
   created_at: string;
   updated_at: string;
 }
+
+export type AssignmentCreate = Pick<Assignment, "title" | "description" | "instructions" | "difficulty"> &
+  Partial<Omit<Assignment, "id" | "created_at" | "updated_at" | "title" | "description" | "instructions" | "difficulty">>;
+
+export type AssignmentUpdate = Partial<AssignmentCreate>;
+
+export interface AssignmentFilters {
+  track_id?: number;
+  module_id?: number;
+  lesson_id?: number;
+  skip?: number;
+  limit?: number;
+}

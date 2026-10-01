@@ -12,8 +12,9 @@ export function getDashboardPath(user: User): string {
     case "client":
       return "/client-dashboard";
     case "instructor":
-    case "admin":
       return "/instructor-dashboard";
+    case "admin":
+      return "/admin";
     default:
       return "/";
   }

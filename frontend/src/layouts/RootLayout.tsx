@@ -1,16 +1,19 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { getDashboardPath, getUserRole } from "@/lib/auth";
 
 export default function RootLayout() {
   const location = useLocation();
   const { user } = useAuth();
+  const dashboardHref = user ? getDashboardPath(user) : "/dashboard";
+  const isAdmin = user ? getUserRole(user) === "admin" : false;
 
   const navigation = [
-    { label: "Dashboard", href: "/dashboard" },
+    { label: "Dashboard", href: dashboardHref },
     { label: "Tracks", href: "/tracks" },
     { label: "My Learning", href: "/my-learning" },
     { label: "Certificates", href: "/certificates" },
-    ...(user?.is_superuser || user?.role === "admin"
+    ...(isAdmin
       ? [{ label: "Payments", href: "/admin/payments" }]
       : []),
   ];
@@ -19,7 +22,7 @@ export default function RootLayout() {
     <div className="min-h-screen bg-[#f8fbff] text-slate-900">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-xl">
         <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-6 px-5 sm:px-8">
-          <Link to="/dashboard" className="flex items-center gap-3">
+          <Link to={dashboardHref} className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#5b9bd5] text-xs font-black text-white shadow-sm shadow-blue-100">
               KD
             </div>

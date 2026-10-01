@@ -12,19 +12,31 @@ export interface ResourceCreate {
   resource_type: string;
 }
 
+export interface LessonQuizQuestion {
+  id: number;
+  question: string;
+  options: string[];
+  correct_index: number;
+  explanation: string;
+}
+
 export interface Lesson {
   id: number;
   module_id: number;
   title: string;
-  content: string;
+  description: string | null;
+  content: string | null;
   video_url: string | null;
   ordering: number;
+  quiz_data: LessonQuizQuestion[] | string | null;
 }
 
 export interface LessonCreate {
   title: string;
-  content: string;
+  description?: string | null;
+  content?: string | null;
   video_url?: string | null;
+  quiz_data?: LessonQuizQuestion[] | null;
   ordering?: number;
 }
 

@@ -35,6 +35,12 @@ function getEnrollmentLabel(status?: Enrollment["status"]) {
   }
 }
 
+function formatAmount(amount: number, currency: string) {
+  return `${new Intl.NumberFormat("en-EG", {
+    maximumFractionDigits: 0,
+  }).format(amount)} ${currency}`;
+}
+
 export default function TrackCard({
   track,
   enrollment,
@@ -79,12 +85,12 @@ export default function TrackCard({
       </CardHeader>
 
       <CardContent>
-        <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+        <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-3">
           <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-            Track slug
+            {track.is_premium ? "Program tuition" : "Tuition"}
           </p>
-          <p className="mt-1 text-sm font-medium text-slate-700">
-            {track.slug}
+          <p className="mt-1 text-lg font-bold text-slate-900">
+            {track.is_premium ? formatAmount(track.price, track.currency) : "Free"}
           </p>
         </div>
       </CardContent>
