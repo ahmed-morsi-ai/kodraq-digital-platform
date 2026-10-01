@@ -55,6 +55,7 @@ pnpm-debug.log*
 # Frontend build output
 dist/
 .vite/
+*.tsbuildinfo
 .vercel/
 .netlify/
 
@@ -75,6 +76,8 @@ secrets/
 # Logs / Runtime
 # ------------------------------------------------------------
 logs/
+backend/uploads/
+backend/.cache/
 *.log
 *.pid
 

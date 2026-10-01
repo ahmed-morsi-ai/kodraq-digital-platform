@@ -1,6 +1,9 @@
 ﻿services:
   db:
-    image: postgres:16-alpine
+    image: kodraq-postgres-pgvector:16
+    build:
+      context: .
+      dockerfile: backend/docker/postgres.Dockerfile
     container_name: kodraq_db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-kodraq_user}
@@ -38,6 +41,8 @@
       context: ./backend
       dockerfile: Dockerfile
     container_name: kodraq_backend
+    env_file:
+      - ./backend/.env
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-kodraq_user}:${POSTGRES_PASSWORD:-kodraq_secure_password}@db:5432/${POSTGRES_DB:-kodraq_db}
       - REDIS_URL=redis://redis:6379/0
