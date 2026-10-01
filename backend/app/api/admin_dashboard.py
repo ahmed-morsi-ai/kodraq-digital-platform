@@ -413,7 +413,11 @@ def activate_user_subscription(
         raise HTTPException(status_code=400, detail="Subscriptions can only be activated for students")
 
     enrollments = list(
-        session.scalars(select(Enrollment).where(Enrollment.user_id == target.id))
+        session.scalars(
+            select(Enrollment)
+            .where(Enrollment.user_id == target.id)
+            .order_by(Enrollment.enrolled_at.desc(), Enrollment.id.desc())
+        )
     )
     primary_track = session.scalar(
         select(Track)
@@ -430,7 +434,7 @@ def activate_user_subscription(
             None,
         )
     else:
-        primary_enrollment = None
+        primary_enrollment = enrollments[0] if enrollments else None
 
     if primary_track is not None and primary_enrollment is None:
         primary_enrollment = Enrollment(
@@ -441,13 +445,20 @@ def activate_user_subscription(
         session.add(primary_enrollment)
         enrollments.append(primary_enrollment)
 
-    for enrollment in enrollments:
-        enrollment.status = "active"
-    target.is_active = True
+    if primary_enrollment.status.casefold() == "active":
+        primary_enrollment.status = "inactive"
+        action = "deactivated"
+        message = "Subscription deactivated"
+    else:
+        primary_enrollment.status = "active"
+        target.is_active = True
+        action = "activated"
+        message = "Subscription activated"
     session.commit()
     return {
         "status": "success",
-        "message": "Subscription activated successfully",
+        "action": action,
+        "message": message,
     }
 
 

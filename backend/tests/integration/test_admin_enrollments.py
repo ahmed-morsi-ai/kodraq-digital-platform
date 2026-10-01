@@ -153,7 +153,13 @@ def test_admin_activation_creates_missing_primary_track_enrollment(
         for method in ("PATCH", "POST")
         for suffix in ("", "/")
     ]
-    for prefix, method, suffix in route_variants:
+    for index, (prefix, method, suffix) in enumerate(route_variants):
+        expected_action = "activated" if index % 2 == 0 else "deactivated"
+        expected_message = (
+            "Subscription activated"
+            if expected_action == "activated"
+            else "Subscription deactivated"
+        )
         response = client.request(
             method,
             f"{prefix}/users/{student.id}/activate-subscription{suffix}",
@@ -162,18 +168,19 @@ def test_admin_activation_creates_missing_primary_track_enrollment(
         assert response.status_code == 200
         assert response.json() == {
             "status": "success",
-            "message": "Subscription activated successfully",
+            "action": expected_action,
+            "message": expected_message,
         }
 
     assert student.is_active is True
     db_session.refresh(secondary_enrollment)
-    assert secondary_enrollment.status == "active"
+    assert secondary_enrollment.status == "pending_payment"
 
     created_enrollment = db_session.query(Enrollment).filter_by(
         user_id=student.id,
         track_id=primary_track.id,
     ).one()
-    assert created_enrollment.status == "active"
+    assert created_enrollment.status == "inactive"
 
 
 def test_admin_and_superuser_can_manage_enrollments(client, db_session):
