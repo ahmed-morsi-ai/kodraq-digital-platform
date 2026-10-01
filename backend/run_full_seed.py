@@ -1,0 +1,16 @@
+import os
+from app.db.session import engine
+from sqlalchemy import text
+
+import reset_and_seed
+
+with engine.connect() as conn:
+    update_query = text("""
+        UPDATE lessons 
+        SET description = COALESCE(NULLIF(description, ''), '??? ?????? ???? ??????? ????? ????? ??????? ?????? ?????????? ???????? ????????.'),
+            video_url = COALESCE(NULLIF(video_url, ''), 'https://www.youtube.com/embed/dQw4w9WgXcQ')
+        WHERE description IS NULL OR description = '' OR video_url IS NULL OR video_url = '';
+    """)
+    conn.execute(update_query)
+    conn.commit()
+    print('? All curriculum lessons successfully populated with Arabic descriptions and video embeds!')

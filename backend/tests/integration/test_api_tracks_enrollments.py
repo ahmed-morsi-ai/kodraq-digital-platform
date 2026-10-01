@@ -102,18 +102,24 @@ def test_track_curriculum_endpoints_and_rbac(client, db_session):
     assert module_response.status_code == status.HTTP_201_CREATED
     module_id = module_response.json()["id"]
 
+    lesson_description = "Dependency injection fundamentals"
+    lesson_video_url = "https://www.youtube.com/watch?v=abcdefghijk"
     lesson_response = client.post(
         f"/api/v1/tracks/modules/{module_id}/lessons",
         headers=admin_headers,
         json={
             "module_id": module_id,
             "title": "Dependencies",
+            "description": lesson_description,
             "content": "Dependency injection",
+            "video_url": lesson_video_url,
             "ordering": 1,
         },
     )
 
     assert lesson_response.status_code == status.HTTP_201_CREATED
+    assert lesson_response.json()["description"] == lesson_description
+    assert lesson_response.json()["video_url"] == lesson_video_url
 
     resource_response = client.post(
         f"/api/v1/tracks/modules/{module_id}/resources",
@@ -149,6 +155,8 @@ def test_track_curriculum_endpoints_and_rbac(client, db_session):
 
     locked_lesson = locked_module["lessons"][0]
     assert locked_lesson["title"] == "Dependencies"
+    assert locked_lesson["description"] == lesson_description
+    assert locked_lesson["video_url"] == lesson_video_url
     assert locked_lesson["content"]
     assert locked_lesson["content"] != "Dependency injection"
 
@@ -162,6 +170,8 @@ def test_track_curriculum_endpoints_and_rbac(client, db_session):
     assert len(data["modules"]) == 1
     assert len(data["modules"][0]["lessons"]) == 1
     assert len(data["modules"][0]["resources"]) == 1
+    assert data["modules"][0]["lessons"][0]["description"] == lesson_description
+    assert data["modules"][0]["lessons"][0]["video_url"] == lesson_video_url
     assert data["modules"][0]["lessons"][0]["content"] == "Dependency injection"
 
 
