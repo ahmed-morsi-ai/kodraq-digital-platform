@@ -10,6 +10,7 @@ import { Link, Navigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/context/AuthContext";
+import { getEmbedUrl } from "@/lib/youtube";
 import { enrollmentService } from "@/services/enrollment.service";
 import { lessonChatService } from "@/services/lessonChat.service";
 import { trackService } from "@/services/track.service";
@@ -293,6 +294,7 @@ export default function LessonView() {
   }
 
   if (!hasAccess) return <Navigate to={`/tracks/${trackId}`} replace />;
+  const videoEmbedUrl = getEmbedUrl(lesson.video_url ?? "");
 
   return (
     <main className="mx-auto grid max-w-7xl gap-6 px-5 py-8 sm:px-8 lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.8fr)]">
@@ -347,11 +349,11 @@ export default function LessonView() {
             )}
           </CardHeader>
           <CardContent className="space-y-5">
-            {lesson.video_url && (
+            {videoEmbedUrl && (
               <div className="aspect-video w-full overflow-hidden rounded-md bg-slate-950">
                 <iframe
                   className="h-full w-full border-0"
-                  src={lesson.video_url}
+                  src={videoEmbedUrl}
                   title={`${lesson.title} video`}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   referrerPolicy="strict-origin-when-cross-origin"
