@@ -560,7 +560,7 @@ WHERE user_id = 42 AND status = 'pending';
 3. **فهرس بذكاء:** أضف Indexes للأعمدة التي يتم البحث أو الترتيب بها متكرراً، وتجنب الإفراط في الفهارس لأنها تبطئ عمليات الـ `INSERT` و `UPDATE`.
 """,
                 "ordering": 1,
-                "video_url": "https://www.youtube.com/embed/ztv704HgWh0",
+                "video_url": "https://www.youtube.com/embed/VQGiO38c_EM",
             },
             {
                 "title": "نماذج SQLAlchemy وإدارة الجلسات",
@@ -677,7 +677,7 @@ def get_users_with_orders(session):
 3. **راقب الاستعلامات:** استخدم `selectinload` عند جلب جداول مرتبطة لمنع الوقوع في فخ استعلامات N+1 المدمرة للأداء.
 """,
                 "ordering": 2,
-                "video_url": "https://www.youtube.com/embed/AbN1AEm_98s",
+                "video_url": "https://www.youtube.com/embed/NvOV3ig2tGY",
             },
             {
                 "title": "ترحيل المخطط باستخدام Alembic و SQLAlchemy",
@@ -802,7 +802,7 @@ def downgrade() -> None:
 3. **احذر في بيئة الإنتاج:** قم بأخذ نسخة احتياطية (Backup) لقاعدة البيانات قبل تنفيذ أي عمليات Migration ضخمة على سيرفر الإنتاج الحقيقي.
 """,
                 "ordering": 3,
-                "video_url": "https://www.youtube.com/embed/k7u02qb8lXg",
+                "video_url": "https://www.youtube.com/embed/i9RX03zFDHU",
             },
         ],
     },
@@ -898,7 +898,7 @@ print(result.is_secure, result.vulnerabilities)
 3. **افصل التعليمات عن البيانات:** استخدم delimiters واضحة مثل `---` أو XML tags، وتعامل مع مدخلات المستخدم والمحتوى المسترجع كبيانات غير موثوقة للحد من Prompt Injection.
 """,
                 "ordering": 1,
-                "video_url": "https://www.youtube.com/embed/bAUvV1WTPzs",
+                "video_url": "https://www.youtube.com/embed/CkNmDiqoXkw",
             },
             {
                 "title": "Embeddings والبحث المتجهي باستخدام pgvector",
@@ -976,7 +976,7 @@ USING hnsw (embedding vector_cosine_ops);
 3. **فهرس المتجهات وراقبها:** اختبر HNSW أو IVFFlat على حجم بيانات ممثل، ووازن بين زمن البحث والذاكرة ودقة الاسترجاع.
 """,
                 "ordering": 2,
-                "video_url": "https://www.youtube.com/embed/JXUS7i_tqxo",
+                "video_url": "https://www.youtube.com/embed/g99yq5zlYAE",
             },
             {
                 "title": "تصميم وتنفيذ بنية RAG متكاملة",
@@ -1064,7 +1064,7 @@ Context:
 3. **قلّل الهلوسة بالأدلة والتحقق:** استخدم سياقاً مصرحاً وذا صلة، واطلب إجابة مقيدة به، ثم تحقق من المصادر والنتيجة في طبقة التطبيق.
 """,
                 "ordering": 3,
-                "video_url": "https://www.youtube.com/embed/sVqYi4WYXwY",
+                "video_url": "https://www.youtube.com/embed/swvzKSOEluc",
             },
         ],
     },
@@ -1156,7 +1156,7 @@ def health_check():
 3. **وفر Health Checks دائماً:** أضف مسار `/healthz` وفحوصات جاهزية مناسبة حتى تتمكن منصة النشر من رصد حالة الخدمة والتعامل مع تعطلها.
 """,
                 "ordering": 1,
-                "video_url": "https://www.youtube.com/embed/71aB4oE52m0",
+                "video_url": "https://www.youtube.com/embed/ybCNoOftT-o",
             },
             {
                 "title": "إدارة متغيرات البيئة والأسرار والشهادات",
@@ -1250,7 +1250,7 @@ app.add_middleware(
 3. **قيّد نطاقات CORS:** لا تستخدم النجمة `*` في `allow_origins` على خوادم الإنتاج؛ حدد نطاقات تطبيقك الرسمية فقط.
 """,
                 "ordering": 2,
-                "video_url": "https://www.youtube.com/embed/K1BIn3e6704",
+                "video_url": "https://www.youtube.com/embed/1P1WX7lQDAw",
             },
             {
                 "title": "النشر السحابي على Vercel و Railway والربط بـ Supabase",
@@ -1333,7 +1333,7 @@ sentry_sdk.init(
 3. **راقب باستمرار:** استخدم Health Checks والسجلات وأدوات مثل Sentry لاكتشاف الأخطاء مبكراً، واختبر خطة rollback قبل الاعتماد عليها.
 """,
                 "ordering": 3,
-                "video_url": "https://www.youtube.com/embed/7X8mJ59uW08",
+                "video_url": "https://www.youtube.com/embed/2n6lClSA_hU",
             },
         ],
     },
