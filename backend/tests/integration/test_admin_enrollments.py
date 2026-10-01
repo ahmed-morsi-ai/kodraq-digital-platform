@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.core.admin_identity import PLATFORM_ADMIN_EMAIL
 from app.core.security import get_password_hash
 from app.models.enrollment import Enrollment
 from app.models.role import Role
@@ -103,6 +104,68 @@ def test_admin_can_list_and_update_enrollments(client, db_session):
     revoked = client.patch(status_url, headers=admin_headers, json={"status": "cancelled"})
     assert revoked.status_code == 200
     assert revoked.json()["status"] == "cancelled"
+
+
+def test_admin_activation_creates_missing_primary_track_enrollment(
+    client,
+    db_session,
+):
+    admin_headers = create_user_headers(
+        client,
+        db_session,
+        email=PLATFORM_ADMIN_EMAIL,
+        role_name="admin",
+    )
+    create_user_headers(
+        client,
+        db_session,
+        email="activate-sub-student@example.test",
+        role_name="student",
+    )
+    student = db_session.query(User).filter_by(
+        email="activate-sub-student@example.test"
+    ).one()
+    primary_track = Track(
+        name="Primary activation track",
+        slug="primary-activation-track",
+        ordering=1,
+        is_active=True,
+    )
+    secondary_track = Track(
+        name="Secondary activation track",
+        slug="secondary-activation-track",
+        ordering=2,
+        is_active=True,
+    )
+    db_session.add_all([primary_track, secondary_track])
+    db_session.flush()
+    secondary_enrollment = Enrollment(
+        user_id=student.id,
+        track_id=secondary_track.id,
+        status="pending_payment",
+    )
+    db_session.add(secondary_enrollment)
+    db_session.flush()
+
+    response = client.patch(
+        f"/api/admin/users/{student.id}/activate-subscription",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "success",
+        "message": "Subscription activated successfully",
+    }
+    assert student.is_active is True
+    db_session.refresh(secondary_enrollment)
+    assert secondary_enrollment.status == "active"
+
+    created_enrollment = db_session.query(Enrollment).filter_by(
+        user_id=student.id,
+        track_id=primary_track.id,
+    ).one()
+    assert created_enrollment.status == "active"
 
 
 def test_admin_and_superuser_can_manage_enrollments(client, db_session):

@@ -385,12 +385,12 @@ def update_admin_user_role(
     )
 
 
-@router.post("/users/{user_id}/activate-subscription")
+@router.patch("/users/{user_id}/activate-subscription")
 def activate_user_subscription(
     user_id: int,
     session: SessionDep,
     current_admin: AdminUserDep,
-) -> dict:
+) -> dict[str, str]:
     del current_admin
     target = session.scalar(
         select(User).options(selectinload(User.role_rel)).where(User.id == user_id)
@@ -404,15 +404,39 @@ def activate_user_subscription(
     enrollments = list(
         session.scalars(select(Enrollment).where(Enrollment.user_id == target.id))
     )
+    primary_track = session.scalar(
+        select(Track)
+        .where(Track.is_active.is_(True))
+        .order_by(Track.ordering, Track.id)
+        .limit(1)
+    )
+    if primary_track is None and not enrollments:
+        raise HTTPException(status_code=404, detail="Primary track not found")
+
+    if primary_track is not None:
+        primary_enrollment = next(
+            (item for item in enrollments if item.track_id == primary_track.id),
+            None,
+        )
+    else:
+        primary_enrollment = None
+
+    if primary_track is not None and primary_enrollment is None:
+        primary_enrollment = Enrollment(
+            user_id=target.id,
+            track_id=primary_track.id,
+            status="active",
+        )
+        session.add(primary_enrollment)
+        enrollments.append(primary_enrollment)
+
     for enrollment in enrollments:
         enrollment.status = "active"
     target.is_active = True
     session.commit()
     return {
-        "user_id": target.id,
-        "is_active": target.is_active,
-        "subscription_active": bool(enrollments),
-        "activated_enrollments": len(enrollments),
+        "status": "success",
+        "message": "Subscription activated successfully",
     }
 
 
