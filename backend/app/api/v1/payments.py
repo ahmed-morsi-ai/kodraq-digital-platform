@@ -40,6 +40,7 @@ class PaymentResponse(BaseModel):
     currency: str
     status: str
     payment_method: str
+    transfer_reference: str | None = None
     receipt_url: str
     rejection_reason: str | None = None
     created_at: object
@@ -56,6 +57,7 @@ def payment_instructions() -> dict[str, str]:
     return {
         "vodafone_cash": "01140225360",
         "instapay": "ahmed_morsi2672@instapay",
+        "bank_transfer": "بيانات التحويل البنكي غير مهيأة حالياً. تواصل مع الدعم للحصول على بيانات الحساب الرسمية.",
     }
 
 
@@ -70,6 +72,7 @@ def submit_payment(
     receipt: Annotated[UploadFile, File()],
     session: SessionDep,
     current_user: CurrentUserDep,
+    transfer_reference: Annotated[str | None, Form(max_length=255)] = None,
 ) -> Payment:
     track = session.get(Track, track_id)
 
@@ -103,6 +106,7 @@ def submit_payment(
         currency=track.currency,
         status="PENDING_VERIFICATION",
         payment_method=payment_method,
+        transfer_reference=(transfer_reference or "").strip() or None,
         receipt_url=receipt_url,
     )
 

@@ -30,6 +30,7 @@ class Payment(Base, TimestampMixin):
     currency = Column(String(3), default="EGP", nullable=False)
     status = Column(String(32), default="PENDING_VERIFICATION", nullable=False)
     payment_method = Column(String(32), nullable=False)
+    transfer_reference = Column(String(255), nullable=True)
     receipt_url = Column(String(1024), nullable=False)
     rejection_reason = Column(String(512), nullable=True)
 

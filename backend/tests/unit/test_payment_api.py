@@ -62,7 +62,7 @@ def test_student_successfully_submits_receipt(client, db_session):
         user_id=student.id,
         obj_in=EnrollmentCreate(
             track_id=track.id,
-            status="active",
+            status="pending_payment",
         ),
     )
     assert enrollment.status == "pending_payment"
@@ -73,6 +73,7 @@ def test_student_successfully_submits_receipt(client, db_session):
         data={
             "track_id": str(track.id),
             "payment_method": "VODAFONE_CASH",
+            "transfer_reference": "01012345678",
         },
         files={
             "receipt": (
@@ -91,6 +92,7 @@ def test_student_successfully_submits_receipt(client, db_session):
     assert payload["currency"] == "EGP"
     assert payload["status"] == "PENDING_VERIFICATION"
     assert payload["payment_method"] == "VODAFONE_CASH"
+    assert payload["transfer_reference"] == "01012345678"
 
     receipt_url = payload["receipt_url"]
     assert receipt_url.startswith("uploads/receipts/")
