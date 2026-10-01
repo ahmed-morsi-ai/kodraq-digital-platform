@@ -5,11 +5,13 @@ import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import EnrollmentPanel from "@/components/EnrollmentPanel";
+import PaymentCheckout from "@/components/PaymentCheckout";
 import TrackCard from "@/components/TrackCard";
 import { enrollmentService } from "@/services/enrollment.service";
 import { trackService } from "@/services/track.service";
 import type { Enrollment } from "@/types/enrollment";
-import type { TrackSummary } from "@/types/track";
+import type { Track, TrackSummary } from "@/types/track";
 
 function getApiErrorMessage(error: unknown) {
   if (isAxiosError(error)) {
@@ -40,6 +42,7 @@ export default function Tracks() {
 
   const [tracks, setTracks] = useState<TrackSummary[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [selectedTrackForCheckout, setSelectedTrackForCheckout] = useState<Track | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,6 +97,18 @@ export default function Tracks() {
 
   const handleOpenTrack = (trackId: number) => {
     navigate(`/tracks/${trackId}`);
+  };
+
+  const handleEnrollmentCreated = (enrollment: Enrollment) => {
+    setEnrollments((current) => [
+      ...current.filter((item) => item.track_id !== enrollment.track_id),
+      enrollment,
+    ]);
+  };
+
+  const handleCheckoutSuccess = () => {
+    setSelectedTrackForCheckout(null);
+    retryTracks();
   };
 
   return (
@@ -204,10 +219,57 @@ export default function Tracks() {
                   track={track}
                   enrollment={enrollmentByTrack.get(track.id)}
                   onOpenTrack={handleOpenTrack}
+                  onEnroll={setSelectedTrackForCheckout}
                 />
               ))}
             </div>
           </section>
+        )}
+
+        {selectedTrackForCheckout && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
+            onClick={() => setSelectedTrackForCheckout(null)}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Enroll in ${selectedTrackForCheckout.name}`}
+              className="max-h-[calc(100vh-2rem)] w-full max-w-5xl overflow-y-auto rounded-xl bg-white shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {selectedTrackForCheckout.is_premium ? (
+                <PaymentCheckout
+                  track={selectedTrackForCheckout}
+                  enrollment={enrollmentByTrack.get(selectedTrackForCheckout.id)}
+                  onClose={() => setSelectedTrackForCheckout(null)}
+                  onSuccess={handleCheckoutSuccess}
+                />
+              ) : (
+                <div className="p-5 sm:p-7">
+                  <div className="mb-4 flex items-center justify-between gap-4">
+                    <h2 className="text-lg font-semibold text-slate-900">
+                      Enroll in {selectedTrackForCheckout.name}
+                    </h2>
+                    <button
+                      type="button"
+                      aria-label="Close enrollment"
+                      onClick={() => setSelectedTrackForCheckout(null)}
+                      className="rounded-md px-2 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <EnrollmentPanel
+                    trackId={selectedTrackForCheckout.id}
+                    enrollment={enrollmentByTrack.get(selectedTrackForCheckout.id)}
+                    onEnrollmentCreated={handleEnrollmentCreated}
+                    onEnrollmentSuccess={handleCheckoutSuccess}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         {isLoading && (

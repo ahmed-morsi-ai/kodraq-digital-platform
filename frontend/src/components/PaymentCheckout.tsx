@@ -15,6 +15,7 @@ import {
   Upload,
   Wallet,
   Wrench,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -23,11 +24,13 @@ import { Label } from "@/components/ui/label";
 import { paymentService } from "@/services/payment.service";
 import type { Enrollment } from "@/types/enrollment";
 import type { Payment, PaymentInstructions, PaymentMethod } from "@/types/payment";
-import type { TrackCurriculum } from "@/types/track";
+import type { Track } from "@/types/track";
 
 interface PaymentCheckoutProps {
-  track: TrackCurriculum;
+  track: Track;
   enrollment?: Enrollment;
+  onClose?: () => void;
+  onSuccess?: () => void;
 }
 
 const PAYMENT_METHODS: {
@@ -50,7 +53,7 @@ function getErrorMessage(error: unknown): string {
     : "تعذر إرسال طلب الدفع. يرجى المحاولة مرة أخرى.";
 }
 
-export default function PaymentCheckout({ track, enrollment }: PaymentCheckoutProps) {
+export default function PaymentCheckout({ track, enrollment, onClose, onSuccess }: PaymentCheckoutProps) {
   const [instructions, setInstructions] = useState<PaymentInstructions | null>(null);
   const [instructionsError, setInstructionsError] = useState<string | null>(null);
   const [method, setMethod] = useState<PaymentMethod>("INSTAPAY");
@@ -123,6 +126,7 @@ export default function PaymentCheckout({ track, enrollment }: PaymentCheckoutPr
         transferReference,
       );
       setPayment(createdPayment);
+      onSuccess?.();
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     } finally {
@@ -132,6 +136,18 @@ export default function PaymentCheckout({ track, enrollment }: PaymentCheckoutPr
 
   return (
     <section dir="rtl" aria-labelledby="checkout-title" className="mt-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5">
+      {onClose && (
+        <div className="flex justify-end border-b border-slate-200 px-3 py-2">
+          <button
+            type="button"
+            aria-label="Close checkout"
+            onClick={onClose}
+            className="rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+          >
+            <X aria-hidden="true" className="size-4" />
+          </button>
+        </div>
+      )}
       <div role="alert" className="flex items-start gap-3 bg-rose-700 px-5 py-4 text-sm font-bold leading-7 text-white sm:px-7">
         <span aria-hidden="true" className="text-lg">🚨</span>
         <p>تنبيه هام: يُغلق باب التسجيل رسمياً يوم الإثنين 05/10/2026، ولن يُفتح باب الانضمام للمسار مرة أخرى إلا بعد 6 أشهر كاملة.</p>

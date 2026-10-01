@@ -20,6 +20,7 @@ interface TrackCardProps {
   track: TrackSummary;
   enrollment?: Enrollment;
   onOpenTrack: (trackId: number) => void;
+  onEnroll: (track: TrackSummary) => void;
 }
 
 function getEnrollmentLabel(status?: Enrollment["status"]) {
@@ -28,6 +29,10 @@ function getEnrollmentLabel(status?: Enrollment["status"]) {
       return "Active enrollment";
     case "completed":
       return "Completed";
+    case "pending":
+      return "Enrollment pending";
+    case "pending_payment":
+      return "Payment pending";
     case "cancelled":
       return "Cancelled";
     default:
@@ -45,9 +50,9 @@ export default function TrackCard({
   track,
   enrollment,
   onOpenTrack,
+  onEnroll,
 }: TrackCardProps) {
-  const isEnrolled =
-    enrollment !== undefined && enrollment.status !== "cancelled";
+  const isEnrolled = enrollment?.status === "active" || enrollment?.status === "completed";
 
   return (
     <Card className="h-full border-gray-200 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
@@ -99,7 +104,7 @@ export default function TrackCard({
         <Button
           type="button"
           className="w-full gap-2 bg-blue-600 text-white hover:bg-blue-700"
-          onClick={() => onOpenTrack(track.id)}
+          onClick={() => isEnrolled ? onOpenTrack(track.id) : onEnroll(track)}
         >
           {isEnrolled ? "Continue learning" : "View & enroll"}
           <ArrowRight className="h-4 w-4" />
