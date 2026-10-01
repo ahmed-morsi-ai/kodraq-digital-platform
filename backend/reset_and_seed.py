@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 load_dotenv(Path(__file__).with_name(".env"))
@@ -485,24 +485,324 @@ async def register(user: UserRegistration):
         "lessons": [
             {
                 "title": "تصميم قواعد بيانات PostgreSQL والعلاقات",
-                "description": "تعلّم تحويل متطلبات المنتج إلى مخطط PostgreSQL سليم باستخدام التطبيع والمفاتيح والعلاقات والقيود والفهارس المناسبة.",
-                "content": "تبدأ الوحدة بتحديد الكيانات وخصائصها ثم تصميم الجداول والمفاتيح الأساسية والخارجية. ستدرس التطبيع لتقليل التكرار، وتمثيل علاقات one-to-many وmany-to-many، واستخدام UNIQUE وCHECK وNOT NULL لحماية قواعد المجال. كما ستراجع المعاملات والعزل والفهارس، وتقرأ أمثلة على JOIN وGROUP BY، ثم تستخدم EXPLAIN لفهم خطط الاستعلام وتختار الفهارس بناء على أنماط القراءة والكتابة الفعلية.",
+                "description": "تعرّف تحويل متطلبات المنتج إلى مخطط PostgreSQL سليم باستخدام التطبيع والمفاتيح والعلاقات والقيود والفهارس المناسبة.",
+                "content": """
+### 1. هندسة قواعد البيانات العلائقية: من متطلبات المنتج إلى المخطط (Schema Design)
+
+عند تصميم نظام خلفي (Backend) قابل للتوسع (Scalable)، تُعد قاعدة البيانات هي الأساس الصلب الذي يُبنى عليه كل شيء. تصميم قاعدة بيانات سيء يعني بطئاً كارثياً في الاستعلامات (Queries) وانهيار النظام تحت الضغط.
+
+**مراحل تحويل المتطلبات إلى قواعد بيانات:**
+1. **تحليل الكيانات (Entities):** تحديد العناصر الأساسية في النظام (مثل: المستخدمين `Users`، المنتجات `Products`، الطلبات `Orders`).
+2. **تحديد الخصائص (Attributes):** استخراج أعمدة كل جدول وأنواع البيانات بدقة (`UUID`, `VARCHAR`, `TIMESTAMPTZ`, `JSONB`).
+3. **التطبيع (Normalization - 1NF, 2NF, 3NF):** منع تكرار البيانات (Data Redundancy) لضمان سلامة البيانات ومنع حدوث أخطاء التحديث (Anomalies).
+
+---
+
+### 2. القيود الصارمة والمفاتيح (Keys & Constraints)
+
+لضمان سلامة البيانات (Data Integrity)، لا يعتمد المطور المحترف على كود التطبيق وحده، بل يفرض القواعد على مستوى قاعدة البيانات نفسها:
+
+* **Primary Key (PK):** المعرف الفريد لكل صف (يوصى بشدة باستخدام `UUIDv7` أو `BIGSERIAL` للأداء العالي).
+* **Foreign Key (FK):** لربط الجداول ببعضها مع تفعيل قواعد الحذف التلقائي (`ON DELETE CASCADE` أو `SET NULL`).
+* **Constraints الشهيرة:**
+    * `NOT NULL`: منع القيم الفارغة في الأعمدة الأساسية.
+    * `UNIQUE`: منع تكرار القيم (مثل البريد الإلكتروني أو اسم المستخدم).
+    * `CHECK`: فرض شروط منطقية (مثل `CHECK (price >= 0)`).
+
+```sql
+-- مثال عملي: إنشاء جدول مستخدمين وطلبات بقيود صارمة وعلاقات
+CREATE TABLE users (
+        id BIGSERIAL PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        hashed_password VARCHAR(255) NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE orders (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        total_amount NUMERIC(10, 2) CHECK (total_amount >= 0),
+        status VARCHAR(50) DEFAULT 'pending',
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 3. أنواع العلاقات المعمارية (Relationships)
+
+في PostgreSQL، تُدار العلاقات بين الجداول عبر ثلاثة أنواع رئيسية:
+
+1. **One-to-Many (1:N):** العلاقة الأكثر شيوعاً (مثل: مستخدم واحد لديه عدة طلبات). يتم تخزين الـ Foreign Key في الجدول التابع (Many).
+2. **Many-to-Many (N:M):** (مثل: الطلاب والمقررات الدراسية، أو المنتجات وCategories). تتطلب إنشاء جدول وسيط (Junction / Association Table).
+3. **One-to-One (1:1):** نادرة الاستخدام، وتُلجأ إليها لفصل البيانات الحساسة أو الكبيرة (مثل: ملف شخصي للمستخدم `User Profile`).
+
+### 4. الفهارس وتحسين الأداء (Indexing & Query Optimization)
+
+بدون الفهارس (Indexes)، ستقوم قاعدة البيانات بعملية بحث كاملة عن الجدول (Sequential Scan) لكل طلب، مما يتسبب في بطء مدمّر مع نمو البيانات.
+
+- **B-Tree Index:** الفهرس الافتراضي والأكثر استخداماً للبحث السريع عن البيانات (مقارنات المساواة والنطاقات مثل `>`, `<`, `=`).
+- **GIN / GiST Indexes:** مخصص للبيانات المعقدة مثل النصوص الكاملة (Full-Text Search) وحقول `JSONB` في PostgreSQL.
+
+#### تحليل خطة الاستعلام عبر `EXPLAIN ANALYZE`:
+
+قبل نشر أي استعلام ضخم للإنتاج، يجب فحصه لمعرفة ما إذا كان المحرك يستفيد من الفهارس أم لا:
+
+```sql
+-- تحليل أداء الاستعلام ومعرفة وقت التنفيذ الفعلي
+EXPLAIN ANALYZE
+SELECT * FROM orders
+WHERE user_id = 42 AND status = 'pending';
+```
+
+### الكبسولة المعمارية للدرس:
+
+1. **صمم بحكمة:** خطط للجداول والعلاقات على الورق أو باستخدام أدوات النمذجة قبل كتابة سطر كود واحد.
+2. **استخدم القيود:** لا تترك حماية البيانات لكود بايثون وحده؛ قاعدة البيانات هي خط الدفاع الأخير.
+3. **فهرس بذكاء:** أضف Indexes للأعمدة التي يتم البحث أو الترتيب بها متكرراً، وتجنب الإفراط في الفهارس لأنها تبطئ عمليات الـ `INSERT` و `UPDATE`.
+""",
                 "ordering": 1,
-                "video_url": "https://www.youtube.com/embed/26ls5lNiijk",
+                "video_url": "https://www.youtube.com/embed/ztv704HgWh0",
             },
             {
                 "title": "نماذج SQLAlchemy وإدارة الجلسات",
                 "description": "استخدم SQLAlchemy ORM والعلاقات وواجهة select في الإصدار 2.x مع ضبط عمر Session وحدود المعاملات وتجنب استعلامات N+1.",
-                "content": "ستعرّف نماذج ORM مرتبطة بجداول PostgreSQL، وتنفذ القراءة والإنشاء والتحديث باستخدام select وSession. تشرح المادة العلاقات بين Track وModule وLesson واستراتيجيات lazy loading وselectinload وjoinedload، وأثر كل منها على عدد الاستعلامات. ستتعلم إدارة commit وrollback عند حدود العملية، وعدم مشاركة Session بين مهام متزامنة، وكيفية فحص SQL الناتج واختبار سلامة البيانات عند حدوث استثناء.",
+                "content": """
+### 1. مقدمة في SQLAlchemy 2.x ORM: جسر الكائنات العلائقية
+
+تُعتبر مكتبة **SQLAlchemy** الأداة الأقوى في إيكوسيستم بايثون للتفاعل مع قواعد البيانات العلائقية. في الإصدار الثاني (`SQLAlchemy 2.x`)، تم تحديث النمط البرمجي بالكامل ليصبح أكثر توافقاً مع Type Hinting، وأكثر سرعة ووضوحاً (مماثل للنمط الحديث في FastAPI).
+
+**مفهوم الـ ORM (Object Relational Mapping):**
+هو تحويل الجداول والأعمدة في قاعدة البيانات إلى كائنات (Classes and Attributes) وفئات بايثون، مما يتيح لك كتابة استعلامات قاعدة البيانات بلغة بايثون الخالصة بدلاً من كتابة كود SQL يدوياً لكل عملية.
+
+---
+
+### 2. بناء النماذج الحديثة (Declarative Models with Mapped)
+
+في SQLAlchemy 2.x، نستخدم النمط الحديث المعتمد على `Mapped` و `mapped_column` لتعريف الجداول والعلاقات بصرامة تامة:
+
+```python
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import String, ForeignKey, DateTime, func
+from datetime import datetime
+from typing import List, Optional
+
+# 1. القاعدة الأساسية للنماذج
+class Base(DeclarativeBase):
+    pass
+
+# 2. نموذج المستخدم (User Model)
+class UserModel(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # العلاقة العكسية مع الطلبات (One-to-Many)
+    orders: Mapped[List["OrderModel"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
+
+# 3. نموذج الطلبات (Order Model)
+class OrderModel(Base):
+    __tablename__ = "orders"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    total_amount: Mapped[float] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="pending")
+
+    # ربط الطلب بصاحبه
+    owner: Mapped["UserModel"] = relationship(back_populates="orders")
+```
+
+### 3. إدارة الجلسات والمعاملات (Session Management & Transactions)
+
+تُعد الـ `Session` هي المساحة البرمجية المؤقتة التي تتابع التغييرات على الكائنات وتدير دورة حياة المعاملات (Transactions).
+
+#### إعداد الـ Engine و SessionLocal:
+
+```python
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+DATABASE_URL = "postgresql://user:password@localhost:5432/dbname"
+
+engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+```
+
+#### التعامل مع المعاملات (Commit & Rollback بأمان):
+
+يجب دائماً استخدام `try...except...finally` أو السياق الآمن (Context Manager) لضمان التراجع عن التغييرات (`rollback`) عند حدوث أي خطأ:
+
+```python
+def create_new_user(email: str, password_hash: str):
+    session = SessionLocal()
+    try:
+        new_user = UserModel(email=email, hashed_password=password_hash)
+        session.add(new_user)
+        session.commit()  # حفظ التغييرات في قاعدة البيانات
+        session.refresh(new_user)  # تحديث الكائن لجلب الـ ID المُولّد
+        return new_user
+    except Exception as e:
+        session.rollback()  # إلغاء المعاملة حال حدوث خطأ لمنع تضارب البيانات
+        raise e
+    finally:
+        session.close()  # إغلاق الجلسة وتحرير الموارد
+```
+
+### 4. استراتيجيات الجلب وتجنب مشكلة N+1 (Loading Strategies)
+
+واحدة من أكبر مشاكل الأداء في الـ ORM هي **مشكلة استعلامات N+1**؛ حيث يتم جلب المستخدمين في استعلام، ثم يتم تنفيذ استعلام منفصل لكل مستخدم لجلب طلباته، مما يقتل أداء السيرفر.
+
+**الحل عبر استخدام استراتيجيات التحميل المسبق (Eager Loading):**
+
+- **`selectinload`:** الأفضل والأكثر كفاءة لعلاقات (One-to-Many). يقوم بجلب البيانات المرتبطة في استعلام منفصل باستخدام جملة `IN (...)`.
+- **`joinedload`:** يقوم بجلب البيانات في نفس الاستعلام عبر جملة `SQL JOIN`.
+
+```python
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
+def get_users_with_orders(session):
+    # استخدام select الحديثة مع selectinload لتجنب مشكلة N+1
+    stmt = select(UserModel).options(selectinload(UserModel.orders))
+    result = session.scalars(stmt).all()
+    return result
+```
+
+### الكبسولة المعمارية للدرس:
+
+1. **استخدم SQLAlchemy 2.x Style:** اعتمد على `Mapped` و `mapped_column` للحصول على أفضل دعم للـ Type Hinting واكتشاف الأخطاء مبكراً.
+2. **أغلق الجلسات دائماً:** تأكد من إغلاق الـ Session بعد انتهاء الطلب لتجنب استنزاف اتصالات قاعدة البيانات (Connection Pool Leaks).
+3. **راقب الاستعلامات:** استخدم `selectinload` عند جلب جداول مرتبطة لمنع الوقوع في فخ استعلامات N+1 المدمرة للأداء.
+""",
                 "ordering": 2,
-                "video_url": "https://www.youtube.com/embed/529LYDgRTgQ",
+                "video_url": "https://www.youtube.com/embed/AbN1AEm_98s",
             },
             {
-                "title": "ترحيل المخطط باستخدام Alembic وSQLAlchemy",
-                "description": "أنشئ migrations قابلة للمراجعة والتكرار، وطبّق تغييرات المخطط والبيانات بأمان عبر بيئات التطوير والاختبار والإنتاج.",
-                "content": "تشرح الوحدة إعداد Alembic وربطه بmetadata الخاصة بـSQLAlchemy، وإنشاء revision ومراجعة أوامر upgrade وdowngrade قبل تشغيلها. ستتدرب على إضافة عمود أو فهرس وتعديل قيود، وعلى كتابة data migration منفصلة عند الحاجة. كما ستتعلم ترتيب revisions، والتعامل مع قاعدة بيانات قائمة، وتخطيط تغييرات متوافقة أثناء النشر بحيث لا يعتمد الإصدار الجديد على مخطط لم يصل بعد إلى جميع البيئات.",
+                "title": "ترحيل المخطط باستخدام Alembic و SQLAlchemy",
+                "description": "أنشئ migrations قابلة للمراجعة والتكرار، وطبق تغييرات المخطط والبيانات بأمان عبر بيئات التطوير والاختبار والإنتاج.",
+                "content": """
+### 1. إدارة التغيرات المعمارية: لماذا نحتاج إلى Alembic؟
+
+عندما يتطور مشروعك البرمجي، ستتغير هياكل الجداول (Schemas) باستمرار: إضافة أعمدة جديدة، تعديل أنواع البيانات، أو إنشاء جدول جديد. التعديل اليدوي في قاعدة البيانات (Direct SQL Alter) يعتبر انتحاراً معمارياً في بيئة الإنتاج (Production).
+
+هنا يأتي دور **Alembic**؛ أداة إدارة وترحيل المخططات (Database Migrations) الرسمية لـ SQLAlchemy، والتي تتيح لك:
+1. تتبع كل تغيير يطرأ على قاعدة البيانات عبر إصدارات (Revisions).
+2. تطبيق التغييرات (`upgrade`) أو التراجع عنها (`downgrade`) بكل أمان وسلاسة.
+3. مزامنة هيكل قاعدة البيانات بدقة بين أفراد فريق العمل وفي سيرفرات الإنتاج.
+
+---
+
+### 2. تهيئة وإعداد Alembic في المشروع
+
+لبدء استخدام Alembic داخل مشروع FastAPI والـ SQLAlchemy، نمر بخطوات التأسيس التالية عبر الـ Terminal:
+
+```bash
+# 1. تثبيت الحزمة عبر الأداة pip
+pip install alembic
+
+# 2. تهيئة المجلد الخاص بـ Alembic في مشروعك
+alembic init alembic
+```
+
+ينتج عن ذلك مجلد `alembic/` وملف إعدادات رئيسي `alembic.ini`. لتفعيل الاتصال بنماذج SQLAlchemy الخاصة بك، يجب تعديل ملف `alembic/env.py` ليشير إلى قاعدة البيانات ونماذج `Base`:
+
+```python
+# داخل ملف alembic/env.py
+from logging.config import fileConfig
+from sqlalchemy import engine_from_config
+from sqlalchemy import pool
+from alembic import context
+
+# استيراد Base النماذج الخاصة بك لتتعرف Alembic على الجداول
+from database import Base
+target_metadata = Base.metadata
+
+config = context.config
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+# ربط عنوان قاعدة البيانات من ملفات الإعدادات أو البيئة
+def run_migrations_offline() -> None:
+    url = config.get_main_option("sqlalchemy.url")
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+def run_migrations_online() -> None:
+    connectable = engine_from_config(
+        config.get_section(config.config_section_name, {}),
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
+    with connectable.connect() as connection:
+        context.configure(connection=connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()
+```
+
+### 3. دورة حياة الترحيل: Auto-generation & Execution
+
+بعد تعديل نماذج بايثون (إضافة جدول جديد أو عمود)، قم بتوليد ملف الـ Migration تلقائياً وتطبيقه عبر الأوامر التالية:
+
+```bash
+# 1. توليد ملف ترحيل جديد بناءً على التغييرات في النماذج
+alembic revision --autogenerate -m "add user phone and status columns"
+
+# 2. تطبيق التغييرات على قاعدة البيانات الفعليّة (Production / Dev)
+alembic upgrade head
+
+# 3. في حال حدوث مشكلة، التراجع عن آخر ترحيل خطوة للوراء
+alembic downgrade -1
+```
+
+### 4. التعامل الآمن مع البيانات (Data Migrations)
+
+أحياناً لا تقتصر التغييرات على الهيكل، بل تتطلب معالجة بيانات موجودة (مثلاً دمج عمودين `first_name` و `last_name` في عمود واحد `full_name`). في هذه الحالات، يجب كتابة كود الترحيل اليدوي داخل ملف الـ Revision المولد:
+
+```python
+from alembic import op
+import sqlalchemy as sa
+
+# مراجعة الـ upgrade والـ downgrade المكتوبة يدوياً
+def upgrade() -> None:
+    # إضافة عمود جديد مؤقتاً
+    op.add_column('users', sa.Column('full_name', sa.String(100), nullable=True))
+
+    # تنفيذ تحديث للبيانات القديمة عبر SQL مباشر داخل الترحيل
+    op.execute("UPDATE users SET full_name = first_name || ' ' || last_name")
+
+    # حذف الأعمدة القديمة بعد ترحيل البيانات بنجاح
+    op.drop_column('users', 'first_name')
+    op.drop_column('users', 'last_name')
+
+def downgrade() -> None:
+    # عكس العملية في حال التراجع
+    op.add_column('users', sa.Column('first_name', sa.String(50)))
+    op.add_column('users', sa.Column('last_name', sa.String(50)))
+    op.execute("UPDATE users SET first_name = split_part(full_name, ' ', 1), last_name = split_part(full_name, ' ', 2)")
+    op.drop_column('users', 'full_name')
+```
+
+### الكبسولة المعمارية للدرس:
+
+1. **لا تعبث بقاعدة البيانات يدوياً:** اجعل كل التغييرات تمر عبر ملفات `Alembic Revisions` لتكون موثقة وقابلة للتكرار.
+2. **راجع ملف الترحيل قبل تنفيذه:** أحياناً تفشل الأداة في رصد بعض التغييرات الدقيقة تلقائياً (مثل تغيير اسم عمود)، لذا افحص ملف الـ Migration الناتج دائماً قبل `alembic upgrade head`.
+3. **احذر في بيئة الإنتاج:** قم بأخذ نسخة احتياطية (Backup) لقاعدة البيانات قبل تنفيذ أي عمليات Migration ضخمة على سيرفر الإنتاج الحقيقي.
+""",
                 "ordering": 3,
-                "video_url": "https://www.youtube.com/embed/e8NnDz8uT7o",
+                "video_url": "https://www.youtube.com/embed/k7u02qb8lXg",
             },
         ],
     },
@@ -513,24 +813,258 @@ async def register(user: UserRegistration):
         "lessons": [
             {
                 "title": "نماذج اللغة الكبيرة وهندسة Prompt Engineering",
-                "description": "تعلّم كتابة تعليمات واضحة للنماذج اللغوية تحدد الدور والهدف والسياق والقيود وشكل المخرجات، مع تقييم الجودة وتقليل الإجابات غير المدعومة.",
-                "content": "تشرح المادة كيف تعالج نماذج اللغة النصوص وما الذي تعنيه الرموز والسياق وحدود طول prompt. ستبني تعليمات تتضمن دوراً ومهمة وسياقاً وأمثلة وقيوداً صريحة، وتفصل مدخلات المستخدم عن تعليمات النظام. كما ستتعلم طلب مخرجات منظمة، واختبار prompt على حالات متنوعة، ورصد الهلوسة والتحيز، وعدم اعتبار صياغة prompt بديلاً عن التفويض والتحقق من البيانات في التطبيق.",
+                "description": "تعرّف كفاءات وقيود نماذج اللغة الكبيرة، وكيفية صياغة prompts احترافية، وتطبيق تقنيات Few-Shot و Chain-of-Thought.",
+                "content": """
+### 1. ما هي نماذج اللغة الكبيرة (LLMs)؟ وكيف تعمل تحت Hood؟
+
+تعمل نماذج اللغة الكبيرة (Large Language Models مثل GPT-4 و Claude 3) على مبدأ أساسي واحد: **التنبؤ بالرمز التالي (Next-Token Prediction)** بناءً على السياق السابق. وعلى الرغم من بساطة الفكرة، فإن ضخامة عدد المعاملات (Parameters) والبيانات تمنح هذه النماذج قدرات لغوية واستدلالية واسعة.
+
+**القيود الجوهرية للـ LLMs:**
+* **الهلوسة (Hallucinations):** قد يولد النموذج إجابات تبدو مقنعة لكنها خاطئة أو غير مدعومة؛ فهو لا يتحقق من الحقيقة تلقائياً.
+* **الحسابات الدقيقة:** النماذج ليست آلات حاسبة، وقد تخطئ في الحساب؛ استخدم أدوات تنفيذ أو Function Calling عندما تكون الدقة الحسابية مطلوبة.
+* **نافذة السياق (Context Window):** حد لكمية الرموز التي يمكن للنموذج معالجتها في الطلب الواحد، ويؤثر في اختيار الأمثلة والمستندات المرسلة.
+
+---
+
+### 2. هندسة الأوامر الاحترافية (Prompt Engineering Frameworks)
+
+للحصول على نتائج دقيقة وقابلة للاستخدام في الأنظمة البرمجية، هيكل الـ Prompt بوضوح:
+
+1. **الدور (Role / Persona):** حدّد خبرة النموذج والمهمة، مثل `You are an expert backend engineer and security auditor`.
+2. **السياق (Context):** قدّم خلفية المشكلة والبيانات المتاحة ومصادرها.
+3. **التعليمات (Instructions):** اشرح المطلوب، والخطوات أو المعايير التي يجب اتباعها.
+4. **محددات المخرجات (Output Format):** حدّد الطول والبنية، مثل Markdown أو مخطط JSON واضح.
+5. **التحقق (Evaluation):** اختبر prompt على أمثلة عادية وحدّية، وقِس الدقة والالتزام بالمخطط.
+
+#### مثال عملي لـ Structured Prompt:
+
+```text
+System:
+You are a senior API architect. Review the provided FastAPI endpoint code for security vulnerabilities.
+
+Context:
+The application handles user financial transactions.
+
+Instructions:
+1. Identify any SQL injection or authentication flaws.
+2. Provide a severity score (Low, Medium, High) for each flaw.
+3. Output the result strictly in valid JSON format.
+
+Input Code:
+@app.get("/balance")
+def get_balance(user_id: str):
+    query = f"SELECT * FROM accounts WHERE id = {user_id}"
+    return db.execute(query).fetchall()
+```
+
+### 3. تقنيات الاستدلال المتقدمة (Advanced Prompting Techniques)
+
+للمهام المعقدة، تساعد تقنيات prompting على تنظيم أمثلة النموذج أو خطوات استخدام الأدوات:
+
+- **Few-Shot Prompting:** أعطِ النموذج أمثلة واضحة من المدخلات والمخرجات قبل السؤال النهائي لتوجيهه نحو النمط المطلوب.
+- **Chain-of-Thought (CoT):** استخدمه لتنظيم حل المهام متعددة الخطوات، واطلب مبرراً موجزاً أو خلاصة تحقق مناسبة للمستخدم بدلاً من الاعتماد على عرض الاستدلال الداخلي دليلاً على الصحة.
+- **ReAct (Reason + Act):** نسّق حلقة اختيار أداة ثم ملاحظة نتيجتها ومتابعة المهمة. امنح الأدوات صلاحيات محدودة، وتحقق من مدخلاتها ومخرجاتها قبل تنفيذ أي إجراء.
+
+### 4. التحكم بالمخرجات عبر Structured Outputs
+
+في تطبيقات الـ Backend، لا تعتمد على نصوص عشوائية من الـ LLM. استخدم JSON mode أو Structured Outputs مع مخطط مثل Pydantic، ثم تحقق من القيم قبل استخدامها؛ فسلامة الشكل لا تضمن صحة المعنى.
+
+```python
+from openai import OpenAI
+from pydantic import BaseModel
+
+client = OpenAI()
+
+class CodeReviewResponse(BaseModel):
+    is_secure: bool
+    vulnerabilities: list[str]
+    recommendation: str
+
+# طلب مخرجات تطابق مخطط Pydantic
+completion = client.beta.chat.completions.parse(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Review this code..."}],
+    response_format=CodeReviewResponse,
+)
+
+result = completion.choices[0].message.parsed
+print(result.is_secure, result.vulnerabilities)
+```
+
+### الكبسولة المعمارية للدرس:
+
+1. **لا تثق بالنصوص الحرة:** استخدم Structured Outputs (مثل Pydantic مع النماذج) للتحقق من توافق المخرجات مع عقد الـ Backend.
+2. **نظّم المهام المعقدة:** استخدم Few-Shot أو تقنيات الاستدلال والأدوات المناسبة، ثم قيّم النتيجة النهائية باختبارات مستقلة.
+3. **افصل التعليمات عن البيانات:** استخدم delimiters واضحة مثل `---` أو XML tags، وتعامل مع مدخلات المستخدم والمحتوى المسترجع كبيانات غير موثوقة للحد من Prompt Injection.
+""",
                 "ordering": 1,
-                "video_url": "https://www.youtube.com/embed/jC4v5AS4RIM",
+                "video_url": "https://www.youtube.com/embed/bAUvV1WTPzs",
             },
             {
                 "title": "Embeddings والبحث المتجهي باستخدام pgvector",
-                "description": "افهم تحويل النص إلى embeddings وتخزينها في PostgreSQL عبر pgvector، ثم استرجاع المقاطع باستخدام مقاييس التشابه والفهارس المتجهية.",
-                "content": "ستقسم المستندات إلى chunks مناسبة، وتنشئ embedding لكل مقطع وتحفظ المتجه مع النص ومعرّف المصدر والبيانات الوصفية. تشرح الوحدة نوع vector في pgvector ومقاييس المسافة الشائعة، وكيفية تنفيذ nearest-neighbor search وإضافة فهارس مثل HNSW عند ملاءمتها. ستوازن بين حجم المقطع والدقة والتكلفة، وتضيف شروط تصفية بحسب track أو lesson قبل إرجاع النتائج لمنع تسرب بيانات غير مصرح بها.",
+                "description": "افهم تحويل النصوص إلى embeddings واستخدام PostgreSQL مع إضافة pgvector لإجراء بحث دلالي (Semantic Search) فائق السرعة.",
+                "content": """
+### 1. ما هي الـ Embeddings وكيف تتحول الكلمات إلى أرقام؟
+
+في قواعد البيانات التقليدية، نبحث عن الكلمات بالمطابقة الحرفية (Keyword Search)، مما يعني أن البحث عن كلمة "شقة" لن يظهر نتائج تحتوي على "منزل" أو "سكن". هنا يأتي دور **Embeddings**.
+
+الـ Embeddings هي تمثيل رياضي (Numerical Representation) للنصوص في شكل متجهات (Vectors) ذات أبعاد عالية (مثل 1536 بُعداً في بعض نماذج OpenAI).
+* الكلمات أو الجمل ذات المعنى المتقارب تُترجم إلى متجهات قريبة من بعضها في الفضاء الرياضي (Vector Space).
+* هذا ما يتيح لنا بناء **البحث الدلالي (Semantic Search)** الذي يفهم المعنى والقصد بغض النظر عن اختلاف الألفاظ.
+
+---
+
+### 2. تفعيل واستخدام `pgvector` في PostgreSQL
+
+بدلاً من استخدام قواعد بيانات متجهية منفصلة، تتيح لنا إضافة **`pgvector`** في PostgreSQL تخزين المتجهات والبيانات العلائقية والبحث فيها ضمن قاعدة بيانات واحدة.
+
+#### تفعيل الإضافة وإنشاء جدول للمتجهات:
+
+```sql
+-- 1. تفعيل الإضافة في قاعدة البيانات
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- 2. إنشاء جدول يحتوي على أعمدة المتجهات
+CREATE TABLE documents (
+    id BIGSERIAL PRIMARY KEY,
+    content TEXT NOT NULL,
+    embedding VECTOR(1536) -- يجب أن يطابق عدد الأبعاد نموذج التضمين المستخدم
+);
+```
+
+### 3. مقاييس التشابه (Distance Metrics)
+
+لحساب مدى تقارب متجه السؤال مع المستندات المخزنة، توفر `pgvector` ثلاثة مقاييس أساسية:
+
+1. **Cosine Distance (`<=>`):** يقيس اختلاف اتجاه المتجهين، ويشيع استخدامه في البحث الدلالي.
+2. **Inner Product (`<#>`):** يعيد الضرب الداخلي السالب في pgvector، ويُستخدم مع ترتيب تصاعدي؛ تحقّق من ملاءمته لتطبيع المتجهات ونموذج التضمين.
+3. **Euclidean Distance (`<->`):** يقيس المسافة المباشرة بين نقطتين في الفضاء (L2 Distance).
+
+اختر العامل المتوافق مع نموذج التضمين، وقيّم النتائج على عينة ممثلة من الاستعلامات بدلاً من افتراض أن مقياساً واحداً مناسب لكل البيانات.
+
+#### تنفيذ استعلام البحث الدلالي:
+
+```sql
+-- البحث عن أقرب 5 مستندات شبهاً بمتجه السؤال
+SELECT id, content,
+       1 - (embedding <=> :query_embedding) AS similarity_score
+FROM documents
+ORDER BY embedding <=> :query_embedding
+LIMIT 5;
+```
+
+### 4. تحسين الأداء والفهارس (Indexing: IVFFlat vs HNSW)
+
+عندما يحتوي الجدول على ملايين المستندات، قد يصبح البحث الدقيق مكلفاً. توفر فهارس `pgvector` بحثاً تقريبياً يوازن بين زمن الاستجابة ودقة الاسترجاع:
+
+- **IVFFlat (Inverted File with Flat Quantization):** يقسم فضاء المتجهات إلى قوائم، ثم يبحث في عدد مختار منها. يحتاج إلى بيانات مناسبة عند بناء الفهرس، ويمكن ضبط عدد القوائم والبحث لموازنة السرعة والاستدعاء.
+- **HNSW (Hierarchical Navigable Small World):** يبني شبكة متعددة الطبقات للوصول بسرعة إلى متجهات قريبة، مع مقايضة في استهلاك الذاكرة ووقت بناء الفهرس.
+
+أنشئ الفهرس باستخدام operator class المطابق لمقياس المسافة، ثم افحص الخطة ونتائج الاسترجاع على بيانات فعلية:
+
+```sql
+-- إنشاء فهرس HNSW لتسريع البحث بترتيب Cosine Distance
+CREATE INDEX documents_embedding_hnsw_idx
+ON documents
+USING hnsw (embedding vector_cosine_ops);
+```
+
+### الكبسولة المعمارية للدرس:
+
+1. **استفد من PostgreSQL:** يتيح `pgvector` الجمع بين البيانات العلائقية والبحث المتجهي، مع تقليل تعقيد تشغيل مخازن منفصلة عند ملاءمة ذلك لحجم النظام.
+2. **اختر مقياس التشابه بحكمة:** استخدم Cosine Distance (`<=>`) عندما يناسب تمثيل النموذج، وتحقق من جودة النتائج.
+3. **فهرس المتجهات وراقبها:** اختبر HNSW أو IVFFlat على حجم بيانات ممثل، ووازن بين زمن البحث والذاكرة ودقة الاسترجاع.
+""",
                 "ordering": 2,
-                "video_url": "https://www.youtube.com/embed/klTvEwg3oJ4",
+                "video_url": "https://www.youtube.com/embed/JXUS7i_tqxo",
             },
             {
                 "title": "تصميم وتنفيذ بنية RAG متكاملة",
-                "description": "اربط ingestion والتقسيم وembeddings والاسترجاع وتوليد الإجابة في خط RAG يعرض الأدلة ويتعامل بوضوح مع نقص السياق.",
-                "content": "تتبع الوحدة خط المعالجة من إدخال المستندات وتنظيفها وتقسيمها إلى chunks، ثم إنشاء embeddings وفهرستها واسترجاع أكثر المقاطع صلة بالسؤال. ستبني prompt يحيط السياق المسترجع بحدود واضحة، وتضيف مصادر الإجابة، وتعيد رداً صريحاً عند غياب أدلة كافية. كما ستدرس عزل المستأجرين والصلاحيات، وحدود السياق، والمهلات والأخطاء، وقياس جودة الاسترجاع والدقة وزمن الاستجابة واستهلاك الرموز.",
+                "description": "تصميم وتنفيذ بنية RAG متكاملة تجمع بين البحث والدلالة واسترجاع البيانات من قاعدة البيانات لتغذية نماذج الذكاء الاصطناعي بدقة عالية.",
+                "content": """
+### 1. ما هو نظام RAG ولماذا نحتاج إليه؟
+
+تعاني نماذج اللغة الكبيرة (LLMs) من مشكلتين رئيسيتين:
+1. **القصور المعرفي:** لا تعرف النماذج تلقائياً بيانات شركتك الخاصة أو المستندات الداخلية الحديثة.
+2. **الهلوسة:** قد تختلق النماذج إجابة تبدو مقنعة لكنها غير صحيحة أو غير مدعومة بمصدر.
+
+يأتي **RAG (Retrieval-Augmented Generation)** ليجمع بين **البحث والاسترجاع (Retrieval)** و**التوليد بالذكاء الاصطناعي (Generation)**. يسترجع النظام مستندات حقيقية ذات صلة بسؤال المستخدم، ثم يمررها إلى النموذج كسياق يمكن الاستناد إليه عند صياغة الإجابة. تساعد الأدلة على تقليل الهلوسة (Hallucinations)، لكن RAG لا يضمن صحة الإجابة تلقائياً؛ فالموثوقية تعتمد على جودة البيانات والاسترجاع والتحقق.
+
+---
+
+### 2. خطوط إنتاج تجهيز البيانات (Ingestion Pipeline)
+
+يجب تجهيز المستندات (PDFs, Docs, Database Records) بطريقة قابلة للتكرار قبل تخزينها واستخدامها:
+
+1. **تقسيم النصوص (Chunking Strategies):** لا ترسل مستنداً كاملاً إلى النموذج. قسّم النص إلى مقاطع مناسبة لمحتواه، وأضف تداخلاً (Overlap) محسوباً لتقليل فقد السياق عند حدود المقاطع. اختبر أحجاماً مختلفة بدلاً من اعتماد عدد ثابت لكل أنواع المستندات.
+2. **توليد التضمينات (Embedding Generation):** حوّل كل مقطع نصي (Chunk) إلى متجه باستخدام نموذج تضمين مثل `text-embedding-3-small`. سجّل إصدار النموذج والأبعاد لتجنب مقارنة متجهات غير متوافقة.
+3. **التخزين في قاعدة البيانات:** احفظ النص الأصلي والمتجه ومعرف المصدر وبياناته الوصفية في PostgreSQL مدعوم بـ `pgvector`.
+4. **التحديث وإعادة المعالجة:** اجعل ingestion قابلاً لإعادة المحاولة والتكرار، وحدد كيفية تحديث أو حذف المقاطع عند تغير المستند المصدر.
+
+---
+
+### 3. بنية الاسترجاع والبحث الهجين (Hybrid Search & Retrieval)
+
+عندما يطرح المستخدم سؤالاً، يمر الاسترجاع عادة بالخطوات التالية:
+
+1. تحقق من هوية المستخدم ونطاق البيانات التي يسمح له بالوصول إليها.
+2. أنشئ Query Embedding للسؤال باستخدام النموذج المتوافق مع المتجهات المخزنة.
+3. استرجع المرشحين بالبحث الدلالي (Semantic Search) عبر `pgvector`.
+5. ادمج النتائج عند الحاجة مع بحث الكلمات المفتاحية أو PostgreSQL Full-Text Search لتكوين **Hybrid Search**.
+6. أعد ترتيب النتائج (Context Re-ranking) باستخدام نموذج reranker أو Cross-Encoder لتحسين ترتيب المقاطع الأكثر صلة قبل بناء السياق.
+5. أعد ترتيب المرشحين بحسب الصلة، ثم اختر عدداً محدوداً من المقاطع للسياق.
+
+```python
+from sqlalchemy import select
+
+def retrieve_relevant_context(user_query: str, db_session, top_k: int = 4) -> str:
+    query_vector = get_embedding(user_query)
+    stmt = (
+        select(DocumentModel)
+        .where(DocumentModel.track_id == authorized_track_id)
+        .order_by(DocumentModel.embedding.cosine_distance(query_vector))
+        .limit(top_k)
+    )
+    results = db_session.scalars(stmt).all()
+    return "\n\n".join(document.content for document in results)
+```
+
+يجب اشتقاق `authorized_track_id` من صلاحيات المستخدم في الخادم، لا من قيمة يرسلها العميل دون تحقق. يمكن إدخال نتائج البحث النصي والمتجهي في مرحلة دمج وترتيب، ثم تمرير أفضل المقاطع فقط إلى النموذج.
+
+### 4. التوليد الآمن ومنع الهلوسة (Generation & Anti-Hallucination)
+
+أرسل السياق المسترجع مع السؤال ضمن تعليمات واضحة تطلب من النموذج الاعتماد على الأدلة، والإقرار بعدم كفاية السياق عند غياب الإجابة. عامل المستندات المسترجعة كمدخلات غير موثوقة؛ افصلها عن التعليمات، ولا تسمح لأي نص فيها بتغيير السياسات أو تنفيذ أدوات.
+
+```python
+def generate_rag_response(user_query: str, context: str):
+    system_prompt = f'''You are a precise enterprise assistant. Answer the user's question using only the provided context.
+If the answer is not supported by the context, state clearly that the documents do not contain it. Do not invent facts.
+
+Context:
+{context}
+'''
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_query},
+        ],
+        temperature=0.0,
+    )
+    return response.choices[0].message.content
+```
+
+تحقق من المراجع والمخرجات قبل عرضها، وتعامل مع الرد الفارغ أو فشل النموذج أو غياب نتائج الاسترجاع بحالات واضحة في التطبيق.
+
+### الكبسولة المعمارية للدرس:
+
+1. **التقسيم الذكي هو السر:** قيّم حجم المقاطع والتداخل على أسئلة واقعية؛ فهما يؤثران في دقة الاسترجاع واكتمال السياق.
+2. **استخدم البحث الهجين:** اجمع البحث الدلالي مع البحث النصي عند احتياج المجال للمطابقة الدقيقة وللتشابه في المعنى.
+3. **قلّل الهلوسة بالأدلة والتحقق:** استخدم سياقاً مصرحاً وذا صلة، واطلب إجابة مقيدة به، ثم تحقق من المصادر والنتيجة في طبقة التطبيق.
+""",
                 "ordering": 3,
-                "video_url": "https://www.youtube.com/embed/T-D1OfcDW1M",
+                "video_url": "https://www.youtube.com/embed/sVqYi4WYXwY",
             },
         ],
     },
@@ -540,25 +1074,266 @@ async def register(user: UserRegistration):
         "ordering": 4,
         "lessons": [
             {
-                "title": "إعداد خدمة الباك إند للإنتاج",
-                "description": "جهّز تطبيق FastAPI للإنتاج بإعدادات منفصلة وآمنة، وملفات تشغيل وحاويات قابلة للتكرار وفحوصات صحة ومراقبة أساسية.",
-                "content": "تشرح الوحدة نقل الإعدادات إلى environment variables وإدارة الأسرار خارج المستودع، وبناء صورة Docker وتشغيل التطبيق بمستخدم محدود الصلاحيات. ستضيف health وreadiness checks، وتضبط logging دون تسجيل tokens أو بيانات حساسة، وتفصل إعدادات التطوير عن الإنتاج. كما ستراجع متطلبات PostgreSQL والتخزين الدائم والنسخ الاحتياطي ومراجعة migrations قبل إتاحة الإصدار للمستخدمين.",
+                "title": "تشغيل FastAPI و Uvicorn/Gunicorn للإنتاج",
+                "description": "تعلم كيفية ضبط خادم Uvicorn و Gunicorn لإدارة العمال (Workers) والعمليات الإنتاجية المرتفعة الأداء والتوافر.",
+                "content": """
+### 1. من بيئة التطوير إلى بيئة الإنتاج: الفرق بين ASGI و WSGI
+
+عند تطوير تطبيقات FastAPI محلياً، نعتمد عادةً على خادم **Uvicorn** بالخيار `--reload` لسرعة التطوير. لكن في بيئات الإنتاج الحقيقية (Production)، هذا الإعداد غير مناسب ولا يستغل موارد السيرفر بالشكل المطلوب.
+
+* **WSGI (Web Server Gateway Interface):** واجهة تقليدية تستخدمها أطر مثل Django وFlask في نمطها المتزامن. يعتمد التوازي فيها غالباً على عمليات أو threads متعددة، لذلك يجب ضبط مواردها وفق حمل التطبيق.
+* **ASGI (Asynchronous Server Gateway Interface):** واجهة غير متزامنة تعتمدها FastAPI، وتدعم اتصالات متزامنة عبر event loop عند استخدام مسارات ومكتبات غير حاجبة، مع إمكانية استخدام حلقات ومكتبات عالية الأداء مثل `uvloop` و`httptools`.
+
+---
+
+### 2. لماذا نحتاج Gunicorn بجانب Uvicorn؟ (Process Management)
+
+يمكن تشغيل Uvicorn مباشرةً، لكنه يعمل افتراضياً بعملية واحدة. للاستفادة من عدة أنوية CPU يمكن استخدام مدير عمليات يشغّل عدة عمال:
+
+1. إطلاق عدة عمليات Uvicorn Workers لخدمة الطلبات.
+2. توزيع الاتصالات على العمليات ومراقبتها.
+3. إعادة تشغيل العامل المتعطل وفق سياسة مدير العمليات، مع ضبط الإغلاق والمهلات لتقليل أثر الأعطال.
+
+يمكن استخدام **Gunicorn** لإدارة هذه العمليات في البيئات التي تدعمه. يعتمد الاختيار بين مدير العمليات المدمج في منصة النشر وتشغيل Gunicorn على نظام التشغيل وطريقة النشر وإصدارات الحزم.
+
+---
+
+### 3. تقدير عدد العمال وإعداد التشغيل
+
+تُستخدم المعادلة التالية كتقدير أولي فقط، وليست قاعدة ثابتة:
+
+$$\\text{Workers} = (2 \\times \\text{Number of CPU Cores}) + 1$$
+
+اضبط العدد بعد قياس استهلاك الذاكرة وCPU وزمن الاستجابة؛ فزيادة العمال قد ترفع استهلاك الذاكرة واتصالات قاعدة البيانات ولا تضمن تحسناً في الأداء.
+
+#### مثال لأمر تشغيل عبر Terminal أو Docker:
+
+```bash
+# تحقّق من توافق مسار worker مع إصدار Uvicorn المستخدم
+gunicorn main:app \\
+    --workers 4 \\
+    --worker-class uvicorn.workers.UvicornWorker \\
+    --bind 0.0.0.0:8000 \\
+    --timeout 120 \\
+    --max-requests 1000 \\
+    --max-requests-jitter 50 \\
+    --access-logfile - \\
+    --error-logfile -
+```
+
+- `--max-requests`: إعادة تشغيل العامل بعد عدد محدد من الطلبات، كوسيلة احترازية وليست علاجاً لتسرب الذاكرة.
+- `--max-requests-jitter`: إضافة تفاوت عشوائي لتقليل احتمال إعادة تشغيل كل العمال في الوقت نفسه.
+
+### 4. الإغلاق الآمن وفحص الجاهزية (Graceful Shutdown & Health Checks)
+
+في بيئات النشر السحابية، يجب أن يغلق التطبيق موارده عند تلقي إشارات الإيقاف (`SIGTERM` / `SIGINT`) بطريقة تسمح بإنهاء الطلبات الجارية وتحرير مجمعات الاتصالات:
+
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+        # تهيئة الموارد عند بدء التطبيق
+        print("Starting server and database connections")
+        yield
+        # تحرير الموارد عند إيقاف التطبيق
+        print("Shutting down gracefully and cleaning up connection pools")
+
+app = FastAPI(lifespan=lifespan)
+
+@app.get("/healthz", status_code=200)
+def health_check():
+        return {"status": "healthy", "service": "Kodraq Backend"}
+```
+
+اجعل فحص الجاهزية يتحقق من الاعتماديات الضرورية عند الحاجة، ولا تكشف تفاصيل أو أسراراً داخل استجابة الفحص.
+
+### الكبسولة المعمارية للدرس:
+
+1. **لا تشغّل `--reload` في الإنتاج:** فهو مخصص للتطوير ويضيف مراقبة وإعادة تحميل غير لازمتين في التشغيل النهائي.
+2. **اختر مدير العمليات المناسب:** استخدم Gunicorn مع worker متوافق، أو آلية العمال التي توفرها منصة التشغيل، واضبط العدد وفق القياس.
+3. **وفر Health Checks دائماً:** أضف مسار `/healthz` وفحوصات جاهزية مناسبة حتى تتمكن منصة النشر من رصد حالة الخدمة والتعامل مع تعطلها.
+""",
                 "ordering": 1,
-                "video_url": "https://www.youtube.com/embed/3c-iBn73dDE",
+                "video_url": "https://www.youtube.com/embed/71aB4oE52m0",
             },
             {
-                "title": "تشغيل FastAPI باستخدام Gunicorn وUvicorn",
-                "description": "افهم دور Uvicorn كخادم ASGI ودور Gunicorn في إدارة workers، واضبط عدد العمليات والمهلات والإغلاق الملائم لحمل التطبيق.",
-                "content": "توضح المادة الفرق بين ASGI server وprocess manager، وكيف يشغّل Gunicorn workers من Uvicorn لتطبيق FastAPI. ستختار إعدادات workers والمهلات وفق موارد المنصة ونوع I/O، وتتعامل مع graceful shutdown وإعادة تشغيل العمال، وتفحص سجلات بدء التشغيل وأخطاء health checks. كما ستتعرف على أثر عدد العمليات على اتصالات قاعدة البيانات والذاكرة، ولماذا يجب اختبار إعداد التشغيل الفعلي بدلاً من استخدام خادم التطوير في الإنتاج.",
+                "title": "إدارة متغيرات البيئة والأسرار والشهادات",
+                "description": "تأمين التطبيق باستخدام Pydantic Settings وحفظ المفاتيح في متغيرات البيئة وركائز الأمن وحماية الاتصالات عبر SSL/TLS.",
+                "content": """
+### 1. إدارة الإعدادات الحديثة عبر Pydantic Settings
+
+تُعد طبقة الإعدادات (Settings Management) خط الدفاع الأول في أي تطبيق إنتاجي. يجب إبعاد كافة المفاتيح الحساسة (مثل `DATABASE_URL` و`JWT_SECRET_KEY` ومفاتيح API الخاصة بـ OpenAI) عن الكود المصدري (Hardcoded Values).
+
+في **FastAPI** و**Pydantic V2**، نستخدم مكتبة `pydantic-settings` لإدارة الإعدادات وقراءتها من متغيرات البيئة (Environment Variables) أو ملفات `.env` مع التحقق الصارم من أنواع البيانات (Type Validation):
+
+```python
+from functools import lru_cache
+
+from pydantic import PostgresDsn, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    PROJECT_NAME: str = "Kodraq Platform"
+    ENV: str = "production"
+
+    # التحقق من صحة رابط قاعدة البيانات
+    DATABASE_URL: PostgresDsn
+
+    # SecretStr يخفي القيمة عند تمثيل الإعداد أو تسجيله
+    JWT_SECRET_KEY: SecretStr
+    OPENAI_API_KEY: SecretStr
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+    )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()
+```
+
+### 2. إدارة المفاتيح السرية وحمايتها من التسريب (Secrets Protection)
+
+تسريب المفاتيح السرية إلى المستودعات العامة هو أحد أسباب اختراق الأنظمة والتكلفة غير المتوقعة في الخدمات السحابية.
+
+- **استخدام `.gitignore` بصرامة:** أضف `.env` و`.env.local` وملفات المفاتيح إلى `.gitignore`، ولا تعتمد على ذلك وحده لحماية أسرار بيئة الإنتاج.
+- **استخدام `SecretStr` في Pydantic:** يخفي التمثيل الافتراضي القيمة الحساسة في السجلات، لكنه لا يمنع تسريبها إذا استخرجت القيمة صراحة أو أرسلتها إلى مكان غير آمن.
+- **إدارة أسرار الإنتاج:** خزّن الأسرار في secret manager أو إعدادات منصة النشر، وقيّد صلاحيات الوصول، ودوّر المفاتيح عند الاشتباه بتسربها.
+
+```python
+# استخراج القيمة السرية فقط عند الحاجة إلى عميل API موثوق
+api_key_value = settings.OPENAI_API_KEY.get_secret_value()
+```
+
+### 3. تأمين الاتصالات وسياسات CORS و SSL/TLS
+
+في بيئات الإنتاج، استخدم HTTPS لحماية البيانات أثناء انتقالها بين الواجهة والخادم ومنع التنصت أو التلاعب بها (Man-in-the-Middle Attacks). أدر شهادات SSL/TLS وتجديدها عبر منصة النشر أو وكيل عكسي موثوق.
+
+#### ضبط سياسات نفاذ المصادر المتقاطعة (CORS Management)
+
+تتحكم CORS في أصول المتصفح المسموح لها بقراءة استجابات API. في الإنتاج، حدد النطاقات الموثوقة وتجنب `allow_origins=["*"]`، خصوصاً عند السماح بالاعتمادات:
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+ALLOWED_ORIGINS = [
+    "https://kodraq.com",
+    "https://www.kodraq.com",
+    "https://app.kodraq.com",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+```
+
+### الكبسولة المعمارية للدرس:
+
+1. **لا تضع أسراراً في الكود أبداً:** اقرأ الإعدادات من متغيرات البيئة أو مخزن أسرار باستخدام `pydantic-settings`.
+2. **احمِ السجلات من التسريبات:** استخدم `SecretStr`، وتجنب تسجيل قيم الأسرار أو تضمينها في رسائل الأخطاء.
+3. **قيّد نطاقات CORS:** لا تستخدم النجمة `*` في `allow_origins` على خوادم الإنتاج؛ حدد نطاقات تطبيقك الرسمية فقط.
+""",
                 "ordering": 2,
-                "video_url": "https://www.youtube.com/embed/R8_veQiYBjI",
+                "video_url": "https://www.youtube.com/embed/K1BIn3e6704",
             },
             {
-                "title": "CI/CD والنشر على Vercel وRailway",
-                "description": "أنشئ خط CI/CD يشغّل الاختبارات ويبني الواجهة والخادم، ثم ينشرهما على Vercel وRailway مع إعداد الأسرار والنطاقات وقاعدة البيانات.",
-                "content": "سترتب مراحل CI للتحقق من التنسيق والأنواع والاختبارات وبناء artifacts قبل الدمج، ثم تهيئ CD لنشر الواجهة على Vercel وخدمة FastAPI وقاعدة البيانات على Railway. تشرح الوحدة ضبط متغيرات البيئة والنطاقات وCORS، وتشغيل migrations بطريقة آمنة، ومراجعة health checks والسجلات بعد النشر. كما ستضع خطة rollback للإصدارات الفاشلة، وتتحقق من أن أسرار الإنتاج لا تظهر في ملفات البناء أو سجلات CI.",
+                "title": "النشر السحابي على Vercel و Railway والربط بـ Supabase",
+                "description": "نشر واجهات FastAPI والـ Frontend على منصات Vercel و Railway والربط الآمن بقاعدة بيانات PostgreSQL على Supabase.",
+                "content": """
+### 1. الإستراتيجية المعمارية لنشر التطبيقات الحديثة (Cloud Topology)
+
+في المعماريات السحابية الحديثة، نعتمد على فصل الخدمات (Decoupled Architecture) لضمان الأداء والمرونة والتوسع المستقل:
+
+* **قاعدة البيانات (Database Layer):** تُدار عبر **Supabase (Managed PostgreSQL)** مع دعم `pgvector` وConnection Pooling عند الحاجة.
+* **الخلفية البرمجية (Backend API Layer):** يُنشر تطبيق FastAPI على **Railway** أو Render باستخدام حاويات **Docker** وعمليات تشغيل مستقرة.
+* **الواجهة الأمامية (Frontend Web App):** تُنشر على **Vercel** للاستفادة من شبكة CDN وتحسين توصيل ملفات الواجهة.
+
+---
+
+### 2. الربط بقاعدة بيانات Supabase وإدارة Connection Pooling
+
+قد تستنزف التطبيقات ذات الاتصالات المتوازية أو نماذج Serverless الحد الأقصى لاتصالات PostgreSQL. يوفر Supabase روابط اتصال مباشرة وروابط عبر Transaction Pooler:
+
+1. **Direct Connection (Port 5432):** مناسب للأدوات والعمليات التي تحتاج اتصالاً مباشراً، مثل بعض مهام Alembic، وفق إعدادات الشبكة والمنصة.
+2. **Transaction Pooler (Port 6543):** يعيد استخدام الاتصالات عبر PgBouncer، ويمكن أن يناسب أحمال التطبيق كثيرة الاتصالات. راجع متطلبات نمط pooling ومزود قاعدة البيانات قبل استخدامه مع ORM.
+
+```env
+# مثال توضيحي؛ خزّن كلمة المرور في متغير سري بمنصة النشر
+DATABASE_URL="postgresql://postgres.<project-ref>:<password>@<pooler-host>:6543/postgres?sslmode=require"
+```
+
+### 3. إعداد الحاويات والنشر على Railway عبر Dockerfile
+
+لإنشاء بيئة تشغيل قابلة للتكرار، ثبّت الاعتماديات وشغّل خادم إنتاج. طابق إصدار Python وأمر التشغيل مع المشروع والمنصة:
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+
+EXPOSE 8000
+CMD ["gunicorn", "main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
+```
+
+#### خطوات النشر على Railway:
+
+1. اربط مستودع GitHub بخدمة Railway وحدد Dockerfile أو إعدادات البناء المناسبة.
+2. أضف متغيرات البيئة مثل `DATABASE_URL` و`JWT_SECRET_KEY` و`OPENAI_API_KEY` في إعدادات الخدمة السرية.
+3. أنشئ نطاقاً عاماً، وتحقق من HTTPS وCORS وفحوصات الصحة وسجلات بدء التشغيل.
+4. شغّل migrations بطريقة مضبوطة قبل تحويل الزيارات إلى الإصدار الجديد.
+
+### 4. نشر Frontend على Vercel والمراقبة في الإنتاج (Observability)
+
+بعد نشر API، اضبط عنوانها في إعدادات مشروع Vercel. يستخدم هذا المشروع Vite، لذلك يكون اسم المتغير `VITE_API_URL`:
+
+```env
+VITE_API_URL="https://kodraq-api.up.railway.app"
+```
+
+#### المراقبة وتتبع الأخطاء (Observability & Logging)
+
+اربط الخدمة بأداة مثل **Sentry** لرصد الاستثناءات وتتبع الأداء. اضبط معدلات أخذ العينات وفق حجم الإنتاج والميزانية، ولا تسجل كلمات المرور أو tokens أو بيانات شخصية غير لازمة:
+
+```python
+import sentry_sdk
+
+sentry_sdk.init(
+    dsn="https://your-sentry-dsn@sentry.io/project-id",
+    traces_sample_rate=0.1,
+    profiles_sample_rate=0.1,
+)
+```
+
+### الكبسولة المعمارية النهائية للمنهج:
+
+1. **افصل المكونات:** اجعل الواجهة والخلفية وقاعدة البيانات مكونات مستقلة بإعدادات اتصال وصلاحيات واضحة.
+2. **استخدم Connection Pooling عند الحاجة:** اضبط PgBouncer أو Transaction Pooler وفق نمط اتصالات التطبيق وحدود قاعدة البيانات.
+3. **راقب باستمرار:** استخدم Health Checks والسجلات وأدوات مثل Sentry لاكتشاف الأخطاء مبكراً، واختبر خطة rollback قبل الاعتماد عليها.
+""",
                 "ordering": 3,
-                "video_url": "https://www.youtube.com/embed/HG6yIjZapSA",
+                "video_url": "https://www.youtube.com/embed/7X8mJ59uW08",
             },
         ],
     },
@@ -593,44 +1368,64 @@ def validate_curriculum_data() -> None:
 
 
 def reset_and_seed() -> None:
-    from app.models.enrollment import Enrollment
-    from app.models.track import Lesson, Resource, Track, TrackModule
-    from app.models.user import User
+    from app.models.track import Lesson, Track, TrackModule
 
     validate_curriculum_data()
     try:
-        print("🧹 Cleaning existing database and seeding Backend & AI Engineering...")
+        print("🌱 Updating Backend & AI Engineering curriculum without deleting accounts or enrollments...")
         with SessionLocal.begin() as db:
-            db.query(Enrollment).delete()
-            db.query(Resource).delete()
-            db.query(Lesson).delete()
-            db.query(TrackModule).delete()
-            db.query(Track).delete()
-            db.query(User).delete()
+            track = db.scalar(
+                select(Track).where(Track.slug == TRACK_DATA["slug"])
+            )
+            if track is None:
+                track = Track(**TRACK_DATA)
+                db.add(track)
+                db.flush()
+            else:
+                for field, value in TRACK_DATA.items():
+                    setattr(track, field, value)
 
-            track = Track(**TRACK_DATA)
-            db.add(track)
-            db.flush()
+            existing_modules = db.scalars(
+                select(TrackModule)
+                .where(TrackModule.track_id == track.id)
+                .order_by(TrackModule.ordering, TrackModule.id)
+            ).all()
+            modules_by_order = {}
+            for existing_module in existing_modules:
+                modules_by_order.setdefault(existing_module.ordering, existing_module)
+
+            seeded_lessons = []
 
             for module_data in MODULES_DATA:
-                module = TrackModule(
-                    track_id=track.id,
-                    title=module_data["title"],
-                    description=module_data["description"],
-                    ordering=module_data["ordering"],
-                )
-                db.add(module)
+                module = modules_by_order.get(module_data["ordering"])
+                if module is None:
+                    module = TrackModule(track_id=track.id)
+                    db.add(module)
+                module.title = module_data["title"]
+                module.description = module_data["description"]
+                module.ordering = module_data["ordering"]
+                module.is_active = True
                 db.flush()
+
+                existing_lessons = db.scalars(
+                    select(Lesson)
+                    .where(Lesson.module_id == module.id)
+                    .order_by(Lesson.ordering, Lesson.id)
+                ).all()
+                lessons_by_order = {}
+                for existing_lesson in existing_lessons:
+                    lessons_by_order.setdefault(existing_lesson.ordering, existing_lesson)
+
                 for lesson_data in module_data["lessons"]:
-                    db.add(Lesson(module_id=module.id, **lesson_data))
+                    lesson = lessons_by_order.get(lesson_data["ordering"])
+                    if lesson is None:
+                        lesson = Lesson(module_id=module.id)
+                        db.add(lesson)
+                    for field, value in lesson_data.items():
+                        setattr(lesson, field, value)
+                    seeded_lessons.append(lesson)
 
             db.flush()
-            seeded_lessons = (
-                db.query(Lesson)
-                .join(TrackModule, Lesson.module_id == TrackModule.id)
-                .filter(TrackModule.track_id == track.id)
-                .all()
-            )
             expected_lesson_count = sum(len(module["lessons"]) for module in MODULES_DATA)
             if len(seeded_lessons) != expected_lesson_count:
                 raise RuntimeError("The seeded lesson count does not match the curriculum.")
@@ -647,7 +1442,7 @@ def reset_and_seed() -> None:
                         f"Lesson {lesson.title!r} is missing required curriculum details."
                     )
 
-        print("🚀 Database reset completed with one track, four modules, and complete lessons.")
+        print("🚀 Curriculum update completed; users, enrollments, and related records were preserved.")
     except Exception as error:
         print(f"❌ Error during reset and seed: {error}")
         raise
