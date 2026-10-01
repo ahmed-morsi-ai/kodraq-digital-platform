@@ -23,7 +23,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { paymentService } from "@/services/payment.service";
 import type { Enrollment } from "@/types/enrollment";
-import type { Payment, PaymentInstructions, PaymentMethod } from "@/types/payment";
+import {
+  DEFAULT_PAYMENT_INSTRUCTIONS,
+  type Payment,
+  type PaymentInstructions,
+  type PaymentMethod,
+} from "@/types/payment";
 import type { Track } from "@/types/track";
 
 interface PaymentCheckoutProps {
@@ -54,8 +59,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 export default function PaymentCheckout({ track, enrollment, onClose, onSuccess }: PaymentCheckoutProps) {
-  const [instructions, setInstructions] = useState<PaymentInstructions | null>(null);
-  const [instructionsError, setInstructionsError] = useState<string | null>(null);
+  const [instructions, setInstructions] = useState<PaymentInstructions>(DEFAULT_PAYMENT_INSTRUCTIONS);
   const [method, setMethod] = useState<PaymentMethod>("INSTAPAY");
   const [transferReference, setTransferReference] = useState("");
   const [receipt, setReceipt] = useState<File | null>(null);
@@ -68,10 +72,10 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
     let active = true;
     void paymentService.getInstructions()
       .then((result) => {
-        if (active) setInstructions(result);
+        if (active) setInstructions({ ...DEFAULT_PAYMENT_INSTRUCTIONS, ...result });
       })
-      .catch((requestError: unknown) => {
-        if (active) setInstructionsError(getErrorMessage(requestError));
+      .catch(() => {
+        if (active) setInstructions(DEFAULT_PAYMENT_INSTRUCTIONS);
       });
     return () => {
       active = false;
@@ -89,10 +93,15 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
   if (!track.is_premium || isAlreadyEnrolled) return null;
 
   const paymentAccount = method === "INSTAPAY"
-    ? instructions?.instapay
+    ? instructions.instapay
     : method === "VODAFONE_CASH"
-      ? instructions?.vodafone_cash
-      : null;
+      ? instructions.vodafone_cash
+      : instructions.bank_transfer;
+  const transferInstructions = method === "INSTAPAY"
+    ? instructions.instapay_instructions
+    : method === "VODAFONE_CASH"
+      ? instructions.vodafone_cash_instructions
+      : instructions.bank_transfer_instructions;
 
   const copyAccount = async () => {
     if (!paymentAccount) return;
@@ -217,22 +226,15 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
 
               <div className="rounded-lg border border-slate-200 bg-white p-4">
                 <p className="text-xs font-bold text-slate-800">بيانات التحويل</p>
-                {instructionsError ? (
-                  <p role="alert" className="mt-2 text-xs leading-5 text-rose-700">{instructionsError}</p>
-                ) : !instructions ? (
-                  <p role="status" className="mt-2 flex items-center gap-2 text-xs text-slate-500"><Loader2 aria-hidden="true" className="size-3.5 animate-spin" /> جارٍ تحميل بيانات الدفع...</p>
-                ) : method === "BANK_TRANSFER" ? (
-                  <p className="mt-2 text-xs leading-5 text-amber-800">{instructions.bank_transfer} لا تحوّل قبل استلام بيانات الحساب من قناة الدعم الرسمية.</p>
-                ) : (
-                  <div className="mt-2 flex items-center justify-between gap-3">
-                    <p dir="ltr" className="min-w-0 break-all text-left font-mono text-sm font-bold text-slate-900">
-                      {method === "INSTAPAY" ? instructions.instapay : instructions.vodafone_cash}
-                    </p>
-                    <button type="button" onClick={() => void copyAccount()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" aria-label="نسخ بيانات الدفع">
-                      <Copy aria-hidden="true" className="size-3.5" /> {copied ? "تم النسخ" : "نسخ"}
-                    </button>
-                  </div>
-                )}
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <p dir="ltr" className="min-w-0 break-all text-left font-mono text-sm font-bold text-slate-900">
+                    {paymentAccount}
+                  </p>
+                  <button type="button" onClick={() => void copyAccount()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" aria-label="نسخ بيانات الدفع">
+                    <Copy aria-hidden="true" className="size-3.5" /> {copied ? "تم النسخ" : "نسخ"}
+                  </button>
+                </div>
+                <p className="mt-3 text-xs leading-5 text-slate-600">{transferInstructions}</p>
               </div>
 
               <div className="space-y-2">
@@ -253,7 +255,7 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
               {enrollment?.status === "pending_payment" && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">طلب التسجيل موجود بانتظار مراجعة الدفع.</p>}
               {error && <p role="alert" className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-800"><AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />{error}</p>}
 
-              <Button type="submit" disabled={isSubmitting || !instructions} className="h-12 w-full gap-2 bg-sky-700 text-sm font-bold text-white hover:bg-sky-800 disabled:opacity-60">
+              <Button type="submit" disabled={isSubmitting} className="h-12 w-full gap-2 bg-sky-700 text-sm font-bold text-white hover:bg-sky-800 disabled:opacity-60">
                 {isSubmitting ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : <ShieldCheck aria-hidden="true" className="size-4" />}
                 {isSubmitting ? "جارٍ إرسال طلبك..." : "احجز مقعدك الآن قبل إغلاق التسجيل 🚀"}
               </Button>

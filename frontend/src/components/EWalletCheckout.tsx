@@ -15,7 +15,7 @@ export default function EWalletCheckout({
   trackName = "Backend & AI Engineering" 
 }: EWalletCheckoutProps) {
   
-  const phoneNumber = "201140225360";
+  const phoneNumber = "201000000000";
   const formattedAmount = `${new Intl.NumberFormat("en-EG", {
     maximumFractionDigits: 0,
   }).format(amount)} ${currency}`;
@@ -35,7 +35,7 @@ export default function EWalletCheckout({
         <p className="text-sm font-medium text-slate-700">قيمة البرنامج: <strong>{formattedAmount}</strong></p>
         <p className="text-sm font-medium text-slate-700">برجاء تحويل قيمة الاشتراك إلى الرقم التالي:</p>
         <div className="text-3xl font-black text-blue-600 text-center tracking-wider py-2">
-          +20 11 40225360
+          +20 10 00000000
         </div>
       </div>
 
