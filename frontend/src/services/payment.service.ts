@@ -15,20 +15,18 @@ export const paymentService = {
   async submitPayment(
     trackId: number,
     method: PaymentMethod,
-    receiptFile: File,
+    receiptFile: File | null,
     transferReference: string,
   ): Promise<Payment> {
     const formData = new FormData();
     formData.append("track_id", String(trackId));
     formData.append("payment_method", method);
     formData.append("transfer_reference", transferReference.trim());
-    formData.append("receipt", receiptFile);
+    if (receiptFile) {
+      formData.append("file", receiptFile);
+    }
 
-    const response = await api.post<Payment>("/api/v1/payments/submit", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
+    const response = await api.post<Payment>("/api/v1/payments", formData);
 
     return response.data;
   },

@@ -155,3 +155,13 @@ def test_local_frontend_cors_preflight(client):
     )
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_local_frontend_cors_headers_are_present_on_auth_errors(client):
+    response = client.get(
+        "/api/v1/users/me",
+        headers={"Origin": "http://localhost:5173"},
+    )
+
+    assert response.status_code == 401
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"

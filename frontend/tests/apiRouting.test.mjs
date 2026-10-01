@@ -3,7 +3,7 @@ import { createServer as createHttpServer } from "node:http";
 import { after, before, test } from "node:test";
 import { createServer } from "vite";
 
-let backend, vite, frontendOrigin, backendOrigin, auth, api, adminDashboardService, token;
+let backend, vite, frontendOrigin, backendOrigin, auth, api, adminDashboardService, paymentService, token;
 const originalApiUrl = process.env.VITE_API_URL;
 const requests = [];
 
@@ -30,6 +30,9 @@ before(async () => {
       data = status === 200
         ? { status: "success", action: "activated", message: "Subscription activated" }
         : { detail: "Not authenticated" };
+    } else if (request.url === "/api/v1/payments" && request.method === "POST") {
+      status = request.headers["content-type"]?.startsWith("multipart/form-data; boundary=") ? 201 : 415;
+      data = status === 201 ? { id: 7, status: "PENDING_VERIFICATION" } : { detail: "Expected multipart form data" };
     }
     response.writeHead(status, { "Content-Type": "application/json" });
     response.end(JSON.stringify(data));
@@ -43,6 +46,7 @@ before(async () => {
   auth = (await vite.ssrLoadModule("/src/services/auth.service.ts")).AuthService;
   api = (await vite.ssrLoadModule("/src/services/api.ts")).api;
   adminDashboardService = (await vite.ssrLoadModule("/src/services/adminDashboard.service.ts")).adminDashboardService;
+  paymentService = (await vite.ssrLoadModule("/src/services/payment.service.ts")).paymentService;
   globalThis.localStorage = { getItem: () => token ?? null };
 });
 
@@ -104,4 +108,26 @@ test("admin subscription toggle uses PATCH and sends the bearer token", async ()
   assert.equal(requests[0].method, "PATCH");
   assert.equal(requests[0].path, "/api/v1/admin/users/42/activate-subscription");
   assert.equal(requests[0].headers.authorization, "Bearer admin-routing-test-token");
+});
+
+test("payment proof uses multipart with a browser-generated boundary and file field", async () => {
+  requests.length = 0;
+  token = "payment-routing-test-token";
+  await paymentService.submitPayment(
+    42,
+    "INSTAPAY",
+    new File(["receipt bytes"], "receipt.png", { type: "image/png" }),
+    "transfer-123",
+  );
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, "POST");
+  assert.equal(requests[0].path, "/api/v1/payments");
+  assert.match(requests[0].headers["content-type"], /^multipart\/form-data; boundary=/);
+  assert.equal(requests[0].headers.authorization, "Bearer payment-routing-test-token");
+  assert.match(requests[0].body, /name="track_id"/);
+  assert.match(requests[0].body, /name="payment_method"/);
+  assert.match(requests[0].body, /name="transfer_reference"/);
+  assert.match(requests[0].body, /name="file"; filename="receipt.png"/);
+  assert.match(requests[0].body, /receipt bytes/);
 });

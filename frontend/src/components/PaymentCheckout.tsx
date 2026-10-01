@@ -50,8 +50,22 @@ const PAYMENT_METHODS: {
 
 function getErrorMessage(error: unknown): string {
   if (isAxiosError(error)) {
-    const detail = error.response?.data?.detail;
+    const responseData: unknown = error.response?.data;
+    const detail = typeof responseData === "object" && responseData !== null
+      ? (responseData as { detail?: unknown }).detail
+      : undefined;
     if (typeof detail === "string" && detail.trim()) return detail;
+    if (Array.isArray(detail)) {
+      const messages = detail.map((item) => {
+        if (typeof item === "object" && item !== null && "msg" in item) {
+          return String(item.msg);
+        }
+        return typeof item === "string" ? item : JSON.stringify(item);
+      });
+      if (messages.length) return messages.join("; ");
+    }
+    if (typeof responseData === "string" && responseData.trim()) return responseData;
+    if (responseData !== undefined) return JSON.stringify(responseData);
   }
   return error instanceof Error
     ? error.message
@@ -137,6 +151,7 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
       setPayment(createdPayment);
       onSuccess?.();
     } catch (requestError) {
+      console.error("Payment proof submission failed", requestError);
       setError(getErrorMessage(requestError));
     } finally {
       setIsSubmitting(false);

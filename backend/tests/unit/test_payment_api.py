@@ -68,7 +68,7 @@ def test_student_successfully_submits_receipt(client, db_session):
     assert enrollment.status == "pending_payment"
 
     response = client.post(
-        "/api/v1/payments/submit",
+        "/api/v1/payments",
         headers=_token_headers(student),
         data={
             "track_id": str(track.id),
@@ -76,7 +76,7 @@ def test_student_successfully_submits_receipt(client, db_session):
             "transfer_reference": "01012345678",
         },
         files={
-            "receipt": (
+            "file": (
                 "receipt.png",
                 b"fake-png-receipt",
                 "image/png",

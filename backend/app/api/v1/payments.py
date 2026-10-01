@@ -66,18 +66,13 @@ def payment_instructions() -> dict[str, str]:
     return dict(PAYMENT_INSTRUCTIONS)
 
 
-@router.post(
-    "/submit",
-    response_model=PaymentResponse,
-    status_code=201,
-)
-def submit_payment(
+def _create_payment(
     track_id: Annotated[int, Form()],
     payment_method: Annotated[str, Form()],
-    receipt: Annotated[UploadFile, File()],
+    receipt_file: UploadFile,
     session: SessionDep,
     current_user: CurrentUserDep,
-    transfer_reference: Annotated[str | None, Form(max_length=255)] = None,
+    transfer_reference: str | None = None,
 ) -> Payment:
     track = session.get(Track, track_id)
 
@@ -95,8 +90,8 @@ def submit_payment(
 
     try:
         receipt_url = save_receipt(
-            file=receipt.file,
-            content_type=receipt.content_type,
+            file=receipt_file.file,
+            content_type=receipt_file.content_type,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -125,6 +120,45 @@ def submit_payment(
         raise
 
     return payment
+
+
+@router.post("", response_model=PaymentResponse, status_code=201)
+@router.post("/proof", response_model=PaymentResponse, status_code=201)
+def submit_payment(
+    track_id: Annotated[int, Form()],
+    payment_method: Annotated[str, Form()],
+    file: Annotated[UploadFile, File()],
+    session: SessionDep,
+    current_user: CurrentUserDep,
+    transfer_reference: Annotated[str | None, Form(max_length=255)] = None,
+) -> Payment:
+    return _create_payment(
+        track_id,
+        payment_method,
+        file,
+        session,
+        current_user,
+        transfer_reference,
+    )
+
+
+@router.post("/submit", response_model=PaymentResponse, status_code=201)
+def submit_payment_legacy(
+    track_id: Annotated[int, Form()],
+    payment_method: Annotated[str, Form()],
+    receipt: Annotated[UploadFile, File()],
+    session: SessionDep,
+    current_user: CurrentUserDep,
+    transfer_reference: Annotated[str | None, Form(max_length=255)] = None,
+) -> Payment:
+    return _create_payment(
+        track_id,
+        payment_method,
+        receipt,
+        session,
+        current_user,
+        transfer_reference,
+    )
 
 
 @router.get(
