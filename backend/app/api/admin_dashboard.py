@@ -27,6 +27,10 @@ from app.schemas.track import (
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin-dashboard"])
+versioned_activation_router = APIRouter(
+    prefix="/api/v1/admin",
+    tags=["admin-dashboard"],
+)
 AdminUserDep = Annotated[User, Depends(get_current_active_admin)]
 
 
@@ -386,6 +390,13 @@ def update_admin_user_role(
 
 
 @router.patch("/users/{user_id}/activate-subscription")
+@router.patch("/users/{user_id}/activate-subscription/")
+@router.post("/users/{user_id}/activate-subscription")
+@router.post("/users/{user_id}/activate-subscription/")
+@versioned_activation_router.patch("/users/{user_id}/activate-subscription")
+@versioned_activation_router.patch("/users/{user_id}/activate-subscription/")
+@versioned_activation_router.post("/users/{user_id}/activate-subscription")
+@versioned_activation_router.post("/users/{user_id}/activate-subscription/")
 def activate_user_subscription(
     user_id: int,
     session: SessionDep,

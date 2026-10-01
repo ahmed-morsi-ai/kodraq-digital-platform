@@ -147,16 +147,24 @@ def test_admin_activation_creates_missing_primary_track_enrollment(
     db_session.add(secondary_enrollment)
     db_session.flush()
 
-    response = client.patch(
-        f"/api/admin/users/{student.id}/activate-subscription",
-        headers=admin_headers,
-    )
+    route_variants = [
+        (prefix, method, suffix)
+        for prefix in ("/api/admin", "/api/v1/admin")
+        for method in ("PATCH", "POST")
+        for suffix in ("", "/")
+    ]
+    for prefix, method, suffix in route_variants:
+        response = client.request(
+            method,
+            f"{prefix}/users/{student.id}/activate-subscription{suffix}",
+            headers=admin_headers,
+        )
+        assert response.status_code == 200
+        assert response.json() == {
+            "status": "success",
+            "message": "Subscription activated successfully",
+        }
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "status": "success",
-        "message": "Subscription activated successfully",
-    }
     assert student.is_active is True
     db_session.refresh(secondary_enrollment)
     assert secondary_enrollment.status == "active"
