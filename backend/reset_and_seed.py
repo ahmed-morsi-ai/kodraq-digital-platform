@@ -38,25 +38,443 @@ MODULES_DATA = [
         "ordering": 1,
         "lessons": [
             {
-                "title": "البرمجة غير المتزامنة Async/Await في Python",
-                "description": "تعرّف على coroutines وevent loop وكيفية استخدام await لتنفيذ عمليات الشبكة وI/O بكفاءة، مع فهم الإلغاء والمهلات ومعالجة الأخطاء ومتى لا يكون async مناسباً.",
-                "content": "تبدأ المادة بالفرق بين الدالة العادية وasync def، ثم تشرح إنشاء coroutine وتشغيلها وانتظارها باستخدام await. ستتدرب على تشغيل عدة مهام I/O بالتزامن، وإضافة timeout، والتعامل مع cancellation والاستثناءات. كما ستتعلم لماذا لا يؤدي async تلقائياً إلى تسريع العمليات الحسابية، وكيف يمكن لاستدعاء مكتبة متزامنة حاجبة أن يوقف event loop، وكيف تختار بين تنفيذ متزامن وغير متزامن وفق طبيعة العمل.",
+                "title": "البرمجة غير المتزامنة Async/Await في بايثون",
+                "description": "تعرّف على event loop و coroutines وكيفية استخدام await لتنفيذ عمليات الشبكة و I/O بكفاءة.",
+                "content": """
+### 1. المقدمة والمفاهيم الأساسية: Sync vs Async وما وراء الكواليس (Under the Hood)
+
+عند بناء أنظمة خلفية (Backend Services) حديثة باستخدام أطر عمل مثل **FastAPI** أو خوادم **ASGI** مثل Uvicorn، تصبح إدارة الموارد والتزامن (Concurrency) نقطة الفصل بين التطبيقات التي تتحمل ملايين الطلبات التزامنية وتلك التي تعاني من التجمّد والإبطاء.
+
+**لماذا Async؟ (تجاوز عنق الزجاجة للـ GIL):**
+في بايثون، يمنع الـ Global Interpreter Lock (GIL) تنفيذ أكثر من Thread واحد في نفس اللحظة. البرمجة غير المتزامنة (AsyncIO) لا تعتمد على نظام الـ OS Threads الثقيل الذي يستهلك الذاكرة (Memory Overhead)، بل تستخدم "خيطاً واحداً" (Single Thread) يدير آلاف المهام بذكاء عبر تبديل السياق (Context Switching) فقط عند فترات الانتظار.
+
+```text
+Synchronous Execution (Blocking):
+[Request 1: Waiting I/O...] -> [Request 2: Waiting I/O...] -> [Request 3: Waiting I/O...]
+Total Time = T1 + T2 + T3
+
+Asynchronous Execution (Non-Blocking Event Loop):
+[Request 1: Start I/O ──┐
+[Request 2: Start I/O ──┼──> Event Loop switches during wait time ──> Completion]
+[Request 3: Start I/O ──┘
+Total Time ≈ Max(T1, T2, T3)
+```
+
+#### الفرق المعماري بين عمليات I/O-Bound و CPU-Bound:
+
+| نوع العمليات | القيد الأساسي (Bottleneck) | الحل الأنسب في بايثون | أمثلة معمارية |
+| --- | --- | --- | --- |
+| **I/O-Bound** | الانتظار لرد السيرفرات، قواعد البيانات، أو أقراص التخزين. | **`asyncio` (Async/Await)** | الاستعلام من PostgreSQL، استدعاء REST APIs خارجية، قراءة ملفات من S3. |
+| **CPU-Bound** | استهلاك قدرات المعالج في الحسابات المعقدة. | **`multiprocessing`** | معالجة الصور، التشفير المعقد، معالجة مصفوفات الذكاء الاصطناعي (NumPy). |
+
+### 2. المحرك الداخلي: Event Loop و Coroutines
+
+تعتمد البرمجة غير المتزامنة في بايثون على مكونين أساسيين:
+
+1. **الـ Coroutine:** هي دالة تُعرّف بـ `async def`. عند استدعائها، لا تُنفّذ شفرتها فوراً، بل تُرجع كائن Coroutine يُمكن إيقافه مؤقتاً واستئنافه بكفاءة عالية جداً في الذاكرة مقارنة بالـ Threads.
+2. **حلقة الأحداث (Event Loop):** المدير المركزي (المايسترو) الذي يدير جميع المهام (Tasks). يقوم بتشغيل الـ Coroutine، وعندما يصل إلى أمر `await` ينتظر عملية خارجية، يحوّل الـ Event Loop التحكم فوراً (في أجزاء من الملي ثانية) لمهمة أخرى جاهزة.
+
+**دور الكلمة المفتاحية `await`:**
+
+تُستخدم `await` فقط داخل الدوال المعرفة بـ `async def`. وتُخبر الـ Event Loop: *"سأنفذ هذه العملية المنتظِرة الآن، يمكنك استغلال موارد المعالج لخدمة مستخدمين آخرين حتى يأتيني الرد"*.
+
+### 3. التطبيق العملي والمقارنة البرمجية (Sync vs Async)
+
+في هذا المثال، سنحاكي جلب بيانات من 3 مصادر خارجية مختلفة (API, Database, Cache)، تستغرق كل منها ثانية واحدة.
+
+#### الكود المتزامن التقليدي (Blocking - يهدر 3 ثوانٍ):
+
+```python
+import time
+
+def fetch_user_data():
+    time.sleep(1)  # محاكاة طلب شبكة متزامن (Blocking)
+    return {"user_id": 101}
+
+def fetch_orders_data():
+    time.sleep(1)
+    return [{"order_id": 5001}]
+
+def fetch_analytics_data():
+    time.sleep(1)
+    return {"status": "active"}
+
+def main_sync():
+    start_time = time.perf_counter()
+
+    user = fetch_user_data()
+    orders = fetch_orders_data()
+    analytics = fetch_analytics_data()
+
+    elapsed = time.perf_counter() - start_time
+    print(f"Sync Total Execution Time: {elapsed:.2f} seconds")
+
+if __name__ == "__main__":
+    main_sync()
+```
+
+#### الكود غير المتزامن الاحترافي (Non-Blocking - ينجز في ثانية واحدة فقط):
+
+```python
+import asyncio
+import time
+
+async def fetch_user_data():
+    await asyncio.sleep(1)  # محاكاة طلب شبكة غير متزامن (Non-Blocking)
+    return {"user_id": 101}
+
+async def fetch_orders_data():
+    await asyncio.sleep(1)
+    return [{"order_id": 5001}]
+
+async def fetch_analytics_data():
+    await asyncio.sleep(1)
+    return {"status": "active"}
+
+async def main_async():
+    start_time = time.perf_counter()
+
+    # تنفيذ جميع المهام بالتوازي وبكفاءة عبر asyncio.gather
+    results = await asyncio.gather(
+        fetch_user_data(),
+        fetch_orders_data(),
+        fetch_analytics_data()
+    )
+
+    elapsed = time.perf_counter() - start_time
+    print(f"نتائج الاستعلام: {results}")
+    print(f"Async Total Execution Time: {elapsed:.2f} seconds")
+
+if __name__ == "__main__":
+    asyncio.run(main_async())
+```
+
+### 4. الأدوات المتقدمة في مكتبة `asyncio` الإنتاجية (Production Grade)
+
+#### أ. المهام الخلفية الموازية (Fire and Forget): `asyncio.create_task`
+
+تُستخدم لبدء تشغيل مهمة في الخلفية دون تعطيل الرد على المستخدم (مثل إرسال الإيميلات أو تسجيل الـ Logs).
+
+```python
+import asyncio
+
+async def send_welcome_email(user_email: str):
+    await asyncio.sleep(2)  # محاكاة إرسال البريد
+    print(f"Welcome email successfully sent to {user_email}")
+
+async def register_user_endpoint():
+    # بدء إرسال الإيميل في الخلفية دون تعطيل استجابة العميل
+    email_task = asyncio.create_task(send_welcome_email("user@example.com"))
+
+    # إرجاع الاستجابة فوراً للمستخدم (Latency شبه معدوم)
+    print("User registered successfully!")
+
+    # في البيئة الحقيقية (FastAPI BackgroundTasks تقوم بهذا الدور تلقائياً)
+    await email_task
+
+asyncio.run(register_user_endpoint())
+```
+
+#### ب. الحماية المعمارية عبر المهلات الزمنية: `asyncio.wait_for`
+
+تمنع انهيار السيرفر أو استهلاك الذاكرة (Memory Leaks) إذا تعطل السيرفر الخارجي الذي تتصل به (مثل بوابات الدفع).
+
+```python
+import asyncio
+
+async def slow_payment_gateway():
+    await asyncio.sleep(5)  # بوابة دفع تواجه مشاكل وبطيئة جداً
+    return {"status": "paid"}
+
+async def process_checkout():
+    try:
+        # حماية السيرفر: إلغاء العملية واستثناء خطأ إذا تجاوزت ثانيتين
+        result = await asyncio.wait_for(slow_payment_gateway(), timeout=2.0)
+        print(f"Payment status: {result}")
+    except asyncio.TimeoutError:
+        print("Payment gateway timed out! Rolling back database transaction safely.")
+
+asyncio.run(process_checkout())
+```
+
+### 5. الأخطاء المعمارية القاتلة في الإنتاج (Common Pitfalls & Best Practices)
+
+#### 1. حظر حلقة الأحداث (Blocking the Event Loop):
+
+- **الخطأ الكارثي:** استخدام مكتبات متزامنة مثل `requests.get()` أو `psycopg2` أو `time.sleep()` داخل دالة `async def`. هذه المكتبات توقف الـ Event Loop بالكامل، مما يعني تجميد السيرفر بأكمله عن الرد على **جميع المستخدمين الآخرين**.
+- **الحل المعماري:** استخدام البدائل غير المتزامنة (Asynchronous Drivers) دائماً:
+  - للشبكات و REST APIs: استخدم `httpx` بدلاً من `requests`.
+  - لقواعد البيانات: استخدم `asyncpg` مع `SQLAlchemy AsyncSession` بدلاً من `psycopg2`.
+
+#### 2. ترويض الكود المتزامن الإجباري: `asyncio.to_thread`
+
+إذا اضطررت لاستخدام مكتبة خارجية (Legacy) لا تدعم الـ Async، يجب عزلها في Thread منفصل لحماية الـ Event Loop:
+
+```python
+import asyncio
+import requests  # مكتبة متزامنة (Blocking)
+
+def blocking_external_call():
+    response = requests.get("https://api.github.com")
+    return response.status_code
+
+async def safe_async_wrapper():
+    # تفويض تنفيذ الدالة المتزامنة إلى Thread Worker آمن
+    status_code = await asyncio.to_thread(blocking_external_call)
+    print(f"GitHub Status Code: {status_code}")
+
+asyncio.run(safe_async_wrapper())
+```
+
+### الكبسولة المعمارية (Architectural Checklist)
+
+1. **`async def` + `await`:** لا تضع `async` على دالة لا تحتوي على عمليات I/O، ولا تنسَ `await` عند مناداة دالة `async` أخرى.
+2. **استغلال التوازي:** إذا كان لديك استعلامات مستقلة، استخدم `asyncio.gather()` لتنفيذها في الوقت نفسه بدلاً من التتابع.
+3. **التدقيق الصارم:** راجع الكود للتأكد من عدم تسرب أي مكتبة blocking إلى endpoints غير المتزامنة.
+""",
                 "ordering": 1,
-                "video_url": "https://www.youtube.com/embed/t5Bo1Je9EmE",
+                "video_url": "https://www.youtube.com/embed/rfscVS0vtbw",
             },
             {
                 "title": "بناء واجهات API باستخدام FastAPI",
                 "description": "تعلّم تنظيم مشروع FastAPI وبناء endpoints واضحة مع dependency injection والتوثيق التلقائي واختبارات تغطي الاستجابات والأخطاء.",
-                "content": "تشرح الوحدة تقسيم التطبيق إلى routers وschemas وservices وCRUD، وتعريف مسارات GET وPOST مع path وquery parameters وrequest bodies. ستستخدم dependencies لمشاركة جلسة قاعدة البيانات والتحقق من المستخدم، وتضبط status codes والاستجابات وتفحص OpenAPI. كما ستضيف اختبارات للمدخلات الصحيحة والخاطئة، وتتعرف على الفرق بين دوال المسار المتزامنة وغير المتزامنة وكيفية تجنب حجب event loop.",
+                "content": """
+### 1. ثورة FastAPI في عالم الباك إند: لماذا هو الخيار الأول؟
+
+لم يعد بناء واجهات برمجة التطبيقات (APIs) مجرد كتابة مسارات (Routes) تُرجع بيانات. في الأنظمة الحديثة، نحتاج إلى السرعة، التحقق الصارم من البيانات، والتوثيق الآلي. هنا يتربع **FastAPI** على العرش.
+
+بُني FastAPI على عملاقين في عالم بايثون:
+1. **Starlette:** لإدارة الـ Web Parts والعمليات غير المتزامنة (Async/Await) بسرعة تضاهي NodeJS و Go.
+2. **Pydantic:** للتحقق من صحة البيانات (Data Validation) والـ Type Hinting بشكل صارم.
+
+---
+
+### 2. التشريح المعماري للـ Endpoints
+
+يتكون أي مسار (Endpoint) احترافي من ثلاثة أجزاء رئيسية:
+* **Path Parameters:** المتغيرات المدمجة في الرابط الأساسي (تُستخدم عادة لجلب مورد محدد عبر الـ ID).
+* **Query Parameters:** المتغيرات المضافة بعد علامة `?` في الرابط (تُستخدم للفلترة، الترتيب، والبحث).
+* **Request Body (Payload):** البيانات المرسلة في جسم الطلب (عادة مع POST و PUT) ويتم التحقق منها عبر نماذج Pydantic.
+
+#### مثال عملي متكامل (CRUD Endpoint):
+
+```python
+from fastapi import FastAPI, Path, Query, Depends, HTTPException
+from pydantic import BaseModel
+from typing import List
+
+app = FastAPI(
+    title="Kodraq Digital API",
+    description="Production-grade API built with FastAPI",
+    version="1.0.0"
+)
+
+# 1. تعريف نموذج البيانات (Pydantic Schema)
+class UserCreate(BaseModel):
+    username: str
+    email: str
+    is_active: bool = True
+
+class UserResponse(UserCreate):
+    id: int
+
+# 2. بناء مسار GET مع Path & Query Parameters
+@app.get("/users/{user_id}", response_model=UserResponse)
+async def get_user(
+    user_id: int = Path(..., title="The ID of the user", ge=1),
+    include_details: bool = Query(False, description="Include full user history")
+):
+    # محاكاة الاستعلام من قاعدة البيانات
+    if user_id != 101:
+        raise HTTPException(status_code=404, detail="User not found in the database")
+
+    return {"id": user_id, "username": "ahmed_morsi", "email": "ahmed@example.com"}
+
+# 3. بناء مسار POST مع Request Body
+@app.post("/users/", response_model=UserResponse, status_code=201)
+async def create_user(user: UserCreate):
+    # محاكاة حفظ البيانات وإرجاعها مع ID
+    return {"id": 102, **user.model_dump()}
+```
+
+### 3. حقن الاعتمادات (Dependency Injection)
+
+يعتبر الـ **Dependency Injection (DI)** من أقوى ميزات FastAPI، حيث يسمح لك بتمرير كائنات معقدة (مثل جلسات قاعدة البيانات، أو دوال التحقق من المستخدم) إلى الـ Endpoints بسهولة تامة، مما يجعل الكود قابلاً للاختبار (Testable) وإعادة الاستخدام (Reusable).
+
+#### كيف نستخدم الـ DI للاتصال بقاعدة البيانات؟
+
+```python
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from database import SessionLocal
+
+# دالة مساعدة (Dependency) لفتح وإغلاق جلسة قاعدة البيانات بأمان
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db  # تسليم الجلسة للـ Endpoint
+    finally:
+        db.close()  # ضمان إغلاق الجلسة حتى لو حدث خطأ
+
+# استخدام الـ Dependency في الـ Endpoint
+@app.get("/analytics/")
+async def fetch_analytics(db: Session = Depends(get_db)):
+    # الآن db هي جلسة نشطة يمكن استخدامها بأمان
+    data = db.execute("SELECT * FROM analytics").fetchall()
+    return {"status": "success", "data": data}
+```
+
+### 4. التوثيق التلقائي (Automatic API Documentation)
+
+أحد أكبر أسباب شهرة FastAPI هو توليده لتوثيق تفاعلي فوري يعتمد على معايير **OpenAPI**. بمجرد تشغيل السيرفر، يمكنك زيارة:
+
+- `http://localhost:8000/docs` (تفاعلي عبر Swagger UI).
+- `http://localhost:8000/redoc` (توثيق عميق ومفصل عبر ReDoc).
+
+💡 **نصيحة إنتاجية:** استخدم دائماً `response_model` في الـ Decorator وقم بكتابة `docstrings` واضحة تحت تعريف الدالة لضمان ظهور التوثيق لفريق العمل بوضوح تام.
+
+### 5. تنظيم المشروع للإنتاج (Project Routers)
+
+لا تضع كل مساراتك في ملف `main.py`. في البيئات الإنتاجية، نستخدم `APIRouter` لتقسيم التطبيق إلى وحدات (Modules) مستقلة:
+
+```python
+# في ملف: routers/users.py
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/users", tags=["Users Management"])
+
+@router.get("/")
+async def list_users():
+    return [{"name": "Ahmed"}, {"name": "Morsi"}]
+
+# في ملف: main.py
+from fastapi import FastAPI
+from routers import users
+
+app = FastAPI()
+
+# ربط ملفات الروابط بالتطبيق الأساسي
+app.include_router(users.router)
+```
+
+### 💡 الكبسولة المعمارية للدرس:
+
+- اعتمد بشكل أساسي على `Pydantic` للتحقق من البيانات الواردة والصادرة.
+- استخدم `Depends()` دائماً لإدارة جلسات قاعدة البيانات (Database Sessions) ومعالجة المصادقة (Authentication).
+- قسّم تطبيقك باستخدام `APIRouter` لضمان قابلية التوسع والصيانة الدورية للمشروع.
+""",
                 "ordering": 2,
-                "video_url": "https://www.youtube.com/embed/SR5NYCdzKkc",
+                "video_url": "https://www.youtube.com/embed/7t2alSnE2rI",
             },
             {
                 "title": "التحقق من البيانات باستخدام Pydantic V2",
                 "description": "افهم نماذج Pydantic V2 وحقولها المقيدة وعمليات serialization والتحقق المخصص لبناء حدود آمنة بين API وبيانات التطبيق.",
-                "content": "ستنشئ BaseModel لمدخلات ومخرجات API، وتحدد أنواع الحقول والقيم الافتراضية والقيود باستخدام Field. تتناول المادة الحقول الاختيارية والنماذج المتداخلة وfield_validator وmodel_validator، ثم تشرح تحويل البيانات باستخدام model_validate وmodel_dump. ستفرق بين type hints المستخدمة للفحص الثابت والتحقق الفعلي وقت التشغيل، وتكتب اختبارات للحالات الصحيحة والقيم المفقودة والمدخلات غير الصالحة مع رسائل أخطاء مفيدة.",
+                "content": """
+### 1. ثورة Pydantic V2: لماذا تمت إعادة كتابته بلغة Rust؟
+
+في الإصدار الثاني (V2)، انتقل **Pydantic** من كونه مجرد مكتبة جيدة للتحقق من البيانات إلى "وحش أداء" حقيقي. تم استبدال المحرك الداخلي (Core) بمحرك مكتوب بلغة **Rust** (`pydantic-core`)، مما أدى إلى زيادة سرعة التحقق من البيانات (Validation) بمقدار **5 إلى 50 ضعفاً** مقارنة بـ V1.
+
+**دور Pydantic في المعمارية:**
+يعمل Pydantic كحارس بوابة (Gatekeeper) صارم بين العالم الخارجي (طلبات المستخدمين) وعالمك الداخلي (قاعدة البيانات والمنطق البرمجي). لا توجد بيانات تدخل نظامك أو تخرج منه دون المرور على فلاتر Pydantic.
+
+---
+
+### 2. بناء النماذج الصارمة (Strict Models & Fields)
+
+نستخدم `BaseModel` لتعريف هياكل البيانات، و `Field` لإضافة قيود دقيقة (Constraints) لا يمكن اختراقها.
+
+```python
+from pydantic import BaseModel, Field, EmailStr
+from typing import Optional
+from datetime import datetime
+
+class UserRegistration(BaseModel):
+    # استخدام Field لفرض قيود على طول النص واسم المستخدم
+    username: str = Field(..., min_length=3, max_length=50, pattern=r'^[a-zA-Z0-9_]+$')
+
+    # EmailStr للتحقق التلقائي من صيغة البريد الإلكتروني (يتطلب pydantic[email])
+    email: EmailStr
+
+    # حقل اختياري مع قيمة افتراضية وقيود رقمية (العمر بين 18 و 100)
+    age: Optional[int] = Field(None, ge=18, le=100)
+
+    # حقل مخفي عن المستخدم يتم توليده تلقائياً
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+```
+
+### 3. عمليات التحقق المتقدمة (Custom Validators)
+
+ماذا لو أردنا التحقق من منطق معقد لا يمكن لـ `Field` تغطيته؟ هنا نستخدم `@field_validator` (للتحقق من حقل واحد) و `@model_validator` (للتحقق من عدة حقول معاً).
+
+```python
+from pydantic import BaseModel, field_validator, model_validator
+
+class PasswordReset(BaseModel):
+    password: str
+    confirm_password: str
+
+    # 1. التحقق من قوة كلمة المرور (حقل واحد)
+    @field_validator('password')
+    @classmethod
+    def check_password_strength(cls, value: str) -> str:
+        if len(value) < 8 or not any(char.isdigit() for char in value):
+            raise ValueError('Password must be at least 8 characters and contain a number')
+        return value
+
+    # 2. التحقق من تطابق كلمتي المرور (على مستوى النموذج ككل)
+    @model_validator(mode='after')
+    def check_passwords_match(self) -> 'PasswordReset':
+        if self.password != self.confirm_password:
+            raise ValueError('Passwords do not match')
+        return self
+```
+
+### 4. التصدير والتسلسل (Serialization)
+
+بعد التحقق من البيانات، ستحتاج إلى تصديرها للتعامل مع قاعدة البيانات (SQLAlchemy) أو إرسالها كاستجابة (JSON). Pydantic V2 يقدم طرقاً فائقة السرعة لذلك:
+
+```python
+user = UserRegistration(username="ahmed_morsi", email="ahmed@example.com")
+
+# 1. التصدير إلى قاموس Python (Dictionary)
+user_dict = user.model_dump()
+# يمكنك استبعاد حقول معينة
+safe_dict = user.model_dump(exclude={"created_at"})
+
+# 2. التصدير مباشرة إلى JSON (فائق السرعة بفضل Rust)
+json_data = user.model_dump_json()
+
+# 3. التفريغ أثناء الاستجابة مع إخفاء البيانات الحساسة
+public_data = user.model_dump(exclude_unset=True)
+```
+
+### 5. التكامل السحري مع FastAPI
+
+في FastAPI، لا تحتاج لاستدعاء دوال التحقق يدوياً؛ بمجرد تعريف `Pydantic Schema` كنوع (Type Hint) في مسار (Endpoint)، يقوم FastAPI بالباقي:
+
+1. يقرأ الـ JSON من الطلب.
+2. يحوله لنموذج Pydantic ويتحقق من صحته.
+3. إذا فشل التحقق، يُرجع رسالة خطأ 422 Unprocessable Entity واضحة جداً للمستخدم.
+4. يولد توثيق OpenAPI يعرض القيود التي وضعتها في `Field`.
+
+```python
+from fastapi import FastAPI, HTTPException
+app = FastAPI()
+
+@app.post("/register/")
+async def register(user: UserRegistration):
+    # إذا وصل الكود إلى هذا السطر، فالبيانات مضمونة 100%
+    return {"message": "User successfully registered", "data": user.model_dump()}
+```
+
+### الكبسولة المعمارية:
+
+- **لا تثق ببيانات العميل أبداً:** اجعل Pydantic الخط الدفاعي الأول في تطبيقك.
+- **استخدم `Field` بكثافة:** كلما أضفت قيوداً (`min_length`, `pattern`)، زادت قوة الـ API الخاص بك وتوثيقه.
+- **احذر من `model_dump()` العشوائي:** استخدم خيارات مثل `exclude` لمنع تسريب بيانات حساسة (مثل كلمات المرور) في ردود السيرفر.
+""",
                 "ordering": 3,
-                "video_url": "https://www.youtube.com/embed/M81pfi64eeM",
+                "video_url": "https://www.youtube.com/embed/Vj-iU-8_xLs",
             },
         ],
     },
