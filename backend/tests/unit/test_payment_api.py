@@ -111,6 +111,42 @@ def test_student_successfully_submits_receipt(client, db_session):
     _cleanup_receipt(receipt_url)
 
 
+def test_receipt_storage_file_not_found_returns_http_400(
+    client,
+    db_session,
+    monkeypatch,
+):
+    student = _create_user(
+        db_session,
+        email="payment-storage-error@example.com",
+    )
+    track = _create_premium_track(db_session)
+
+    def fail_to_save_receipt(*, file, content_type):
+        raise FileNotFoundError("Receipt storage path is unavailable.")
+
+    monkeypatch.setattr("app.api.v1.payments.save_receipt", fail_to_save_receipt)
+    response = client.post(
+        "/api/v1/payments/proof",
+        headers=_token_headers(student),
+        data={
+            "track_id": str(track.id),
+            "payment_method": "INSTAPAY",
+            "transfer_reference": "receipt-storage-test",
+        },
+        files={
+            "file": (
+                "receipt.png",
+                b"receipt bytes",
+                "image/png",
+            )
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Receipt storage path is unavailable."}
+
+
 def test_admin_verification_activates_pending_enrollment(
     client,
     db_session,

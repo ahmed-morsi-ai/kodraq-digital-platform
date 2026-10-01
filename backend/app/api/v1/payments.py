@@ -67,59 +67,64 @@ def payment_instructions() -> dict[str, str]:
 
 
 def _create_payment(
-    track_id: Annotated[int, Form()],
-    payment_method: Annotated[str, Form()],
+    track_id: int,
+    payment_method: str,
     receipt_file: UploadFile,
     session: SessionDep,
     current_user: CurrentUserDep,
     transfer_reference: str | None = None,
 ) -> Payment:
-    track = session.get(Track, track_id)
-
-    if not track:
-        raise HTTPException(
-            status_code=404,
-            detail="Track not found.",
-        )
-
-    if not track.is_premium:
-        raise HTTPException(
-            status_code=400,
-            detail="Payments can only be submitted for premium tracks.",
-        )
-
+    receipt_url: str | None = None
+    payment_committed = False
     try:
+        track = session.get(Track, track_id)
+
+        if not track:
+            raise HTTPException(
+                status_code=404,
+                detail="Track not found.",
+            )
+
+        if not track.is_premium:
+            raise HTTPException(
+                status_code=400,
+                detail="Payments can only be submitted for premium tracks.",
+            )
+
         receipt_url = save_receipt(
             file=receipt_file.file,
             content_type=receipt_file.content_type,
         )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        ) from exc
 
-    payment = Payment(
-        user_id=current_user.id,
-        track_id=track.id,
-        amount=track.price,
-        currency=track.currency,
-        status="PENDING_VERIFICATION",
-        payment_method=payment_method,
-        transfer_reference=(transfer_reference or "").strip() or None,
-        receipt_url=receipt_url,
-    )
+        payment = Payment(
+            user_id=current_user.id,
+            track_id=track.id,
+            amount=track.price,
+            currency=track.currency,
+            status="PENDING_VERIFICATION",
+            payment_method=payment_method,
+            transfer_reference=(transfer_reference or "").strip() or None,
+            receipt_url=receipt_url,
+        )
 
-    try:
         session.add(payment)
         session.commit()
+        payment_committed = True
         session.refresh(payment)
-    except Exception:
-        session.rollback()
-        delete_receipt(receipt_url)
+        return payment
+    except HTTPException:
         raise
-
-    return payment
+    except Exception as exc:
+        try:
+            session.rollback()
+        except Exception:
+            pass
+        if receipt_url is not None and not payment_committed:
+            try:
+                delete_receipt(receipt_url)
+            except Exception:
+                pass
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("", response_model=PaymentResponse, status_code=201)
