@@ -4,7 +4,6 @@ import {
   ArrowUpRight,
   BarChart3,
   BookOpen,
-  Check,
   ChevronDown,
   CircleHelp,
   Database,
@@ -42,6 +41,7 @@ import type {
 import type { Lesson, LessonQuizQuestion } from "@/types/track";
 
 type DashboardTab = "Overview" | "Content CMS" | "Students" | "Analytics" | "Settings";
+type AdminToast = { kind: "success" | "error"; message: string };
 
 const tabs: { label: DashboardTab; icon: typeof LayoutDashboard }[] = [
   { label: "Overview", icon: LayoutDashboard },
@@ -201,6 +201,7 @@ export default function AdvancedAdminDashboard() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [toast, setToast] = useState<AdminToast | null>(null);
   const [search, setSearch] = useState("");
   const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
   const [selectedModuleId, setSelectedModuleId] = useState<number | null>(null);
@@ -212,6 +213,12 @@ export default function AdvancedAdminDashboard() {
   const [newTrackDescription, setNewTrackDescription] = useState("");
   const [newModuleTitle, setNewModuleTitle] = useState("");
   const [newLessonTitle, setNewLessonTitle] = useState("");
+
+  useEffect(() => {
+    if (!toast) return;
+    const timeoutId = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [toast]);
 
   const loadDashboard = async (quiet = false) => {
     if (quiet) setIsRefreshing(true);
@@ -447,20 +454,28 @@ export default function AdvancedAdminDashboard() {
     });
   };
 
-  const activateSubscription = (student: AdminStudent) => {
-    void withSaving(async () => {
-      const result = await adminDashboardService.activateSubscription(student.id);
-      setStudents((current) => current.map((item) => item.id === student.id
+  const handleToggleSubscription = async (studentId: number) => {
+    setIsSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await adminDashboardService.activateSubscription(studentId);
+      if (result.status !== "success") {
+        throw new Error(result.message || "Subscription activation failed.");
+      }
+      setStudents((current) => current.map((item) => item.id === studentId
         ? {
           ...item,
-          is_active: result.is_active,
-          subscription_active: result.subscription_active,
+          is_active: result.action === "activated" ? true : item.is_active,
+          subscription_active: result.action === "activated",
         }
         : item));
-      setNotice(result.activated_enrollments
-        ? `Activated ${result.activated_enrollments} subscription(s) for ${student.full_name}.`
-        : `${student.full_name}'s account is active; no track enrollments were found to activate.`);
-    });
+      setToast({ kind: "success", message: result.message });
+    } catch (requestError) {
+      setToast({ kind: "error", message: getErrorMessage(requestError) });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const addQuizQuestion = () => {
@@ -501,6 +516,17 @@ export default function AdvancedAdminDashboard() {
 
   return (
     <div className="min-h-[calc(100vh-64px)] bg-slate-950 p-3 text-slate-900 sm:p-5 lg:p-6">
+      {toast && (
+        <div className="pointer-events-none fixed right-4 top-20 z-50 w-[min(24rem,calc(100vw-2rem))]">
+          <div
+            role={toast.kind === "error" ? "alert" : "status"}
+            aria-live={toast.kind === "error" ? "assertive" : "polite"}
+            className={`rounded-lg border px-4 py-3 text-sm shadow-lg ${toast.kind === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-800"}`}
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
       <div className="mx-auto grid min-h-[calc(100vh-112px)] max-w-[1680px] overflow-hidden rounded-2xl border border-slate-800 bg-slate-50 shadow-2xl shadow-black/20 lg:grid-cols-[244px_minmax(0,1fr)]">
         <aside className="flex flex-col border-b border-slate-800 bg-slate-950 p-4 text-slate-200 lg:border-b-0 lg:border-r lg:p-5">
           <div className="flex items-center gap-3 px-2 py-2">
@@ -634,7 +660,7 @@ export default function AdvancedAdminDashboard() {
                               <td className="px-5 py-4"><div className="flex items-center gap-2"><div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-sky-500" style={{ width: `${Math.min(100, student.progress_percentage)}%` }} /></div><span className="text-xs tabular-nums text-slate-600">{student.progress_percentage}%</span></div></td>
                               <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${student.role === "admin" ? "bg-violet-50 text-violet-700" : "bg-slate-100 text-slate-600"}`}>{student.role}</span></td>
                               <td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 text-xs font-medium ${student.is_active ? "text-emerald-700" : "text-rose-700"}`}><span className={`size-1.5 rounded-full ${student.is_active ? "bg-emerald-500" : "bg-rose-500"}`} />{student.is_active ? "Active" : "Blocked"}</span></td>
-                              <td className="px-5 py-4 text-right"><div className="inline-flex flex-wrap justify-end gap-2">{student.role === "student" ? <><Button size="sm" variant={student.is_active ? "outline" : "default"} disabled={isSaving} onClick={() => updateStudent(student, { is_active: !student.is_active })}>{student.is_active ? "Block" : "Unblock"}</Button><Button size="sm" disabled={isSaving || student.subscription_active} onClick={() => activateSubscription(student)} className={student.subscription_active ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "bg-emerald-600 text-white hover:bg-emerald-700"}>{student.subscription_active ? <Check aria-hidden="true" className="size-4" /> : <ShieldCheck aria-hidden="true" className="size-4" />}{student.subscription_active ? "Active Subscription" : "Activate Sub"}</Button></> : <span className="text-xs font-semibold text-violet-700">Platform admin</span>}</div></td>
+                              <td className="px-5 py-4 text-right"><div className="inline-flex flex-wrap justify-end gap-2">{student.role === "student" ? <><Button size="sm" variant={student.is_active ? "outline" : "default"} disabled={isSaving} onClick={() => updateStudent(student, { is_active: !student.is_active })}>{student.is_active ? "Block" : "Unblock"}</Button><button type="button" disabled={isSaving} onClick={() => handleToggleSubscription(student.id)} className={student.subscription_active ? "px-3 py-1.5 text-xs font-semibold rounded-lg border border-rose-300 text-rose-700 bg-rose-50/50 hover:bg-rose-100/80 transition-all flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60" : "px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-all flex items-center gap-1 cursor-pointer shadow-sm disabled:cursor-not-allowed disabled:opacity-60"}><span>{student.subscription_active ? "Deactivate Sub" : "Activate Sub"}</span></button></> : <span className="text-xs font-semibold text-violet-700">Platform admin</span>}</div></td>
                             </tr>
                           ))}
                           {!filteredStudents.length && <tr><td colSpan={6} className="px-5 py-12 text-center text-sm text-slate-500">No matching students.</td></tr>}

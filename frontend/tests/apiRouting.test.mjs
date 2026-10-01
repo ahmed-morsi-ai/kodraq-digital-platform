@@ -3,7 +3,7 @@ import { createServer as createHttpServer } from "node:http";
 import { after, before, test } from "node:test";
 import { createServer } from "vite";
 
-let backend, vite, frontendOrigin, backendOrigin, auth, api, token;
+let backend, vite, frontendOrigin, backendOrigin, auth, api, adminDashboardService, token;
 const originalApiUrl = process.env.VITE_API_URL;
 const requests = [];
 
@@ -25,6 +25,11 @@ before(async () => {
     } else if (request.url === "/api/v1/users/me" && request.method === "GET") {
       status = request.headers.authorization === "Bearer routing-test-token" ? 200 : 401;
       data = status === 200 ? { id: 10, email: "student@example.test", role_name: "student" } : { detail: "Not authenticated" };
+    } else if (request.url === "/api/v1/admin/users/42/activate-subscription" && request.method === "PATCH") {
+      status = request.headers.authorization === "Bearer admin-routing-test-token" ? 200 : 401;
+      data = status === 200
+        ? { status: "success", action: "activated", message: "Subscription activated" }
+        : { detail: "Not authenticated" };
     }
     response.writeHead(status, { "Content-Type": "application/json" });
     response.end(JSON.stringify(data));
@@ -37,6 +42,7 @@ before(async () => {
   frontendOrigin = `http://127.0.0.1:${vite.httpServer.address().port}`;
   auth = (await vite.ssrLoadModule("/src/services/auth.service.ts")).AuthService;
   api = (await vite.ssrLoadModule("/src/services/api.ts")).api;
+  adminDashboardService = (await vite.ssrLoadModule("/src/services/adminDashboard.service.ts")).adminDashboardService;
   globalThis.localStorage = { getItem: () => token ?? null };
 });
 
@@ -83,4 +89,19 @@ test("Vite passes backend validation and unauthenticated responses instead of re
     assert.match(response.headers.get("content-type"), /^application\/json/);
     assert.ok((await response.json()).detail);
   }
+});
+
+test("admin subscription toggle uses PATCH and sends the bearer token", async () => {
+  requests.length = 0;
+  token = "admin-routing-test-token";
+  const result = await adminDashboardService.activateSubscription(42);
+  assert.deepEqual(result, {
+    status: "success",
+    action: "activated",
+    message: "Subscription activated",
+  });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, "PATCH");
+  assert.equal(requests[0].path, "/api/v1/admin/users/42/activate-subscription");
+  assert.equal(requests[0].headers.authorization, "Bearer admin-routing-test-token");
 });

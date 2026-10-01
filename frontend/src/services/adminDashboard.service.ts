@@ -32,13 +32,16 @@ export const adminDashboardService = {
   },
 
   async activateSubscription(userId: number): Promise<{
-    user_id: number;
-    is_active: boolean;
-    subscription_active: boolean;
-    activated_enrollments: number;
+    status: "success";
+    action: "activated" | "deactivated";
+    message: string;
   }> {
-    const response = await api.post(
-      `/api/admin/users/${userId}/activate-subscription`,
+    const response = await api.patch<{
+      status: "success";
+      action: "activated" | "deactivated";
+      message: string;
+    }>(
+      `/api/v1/admin/users/${userId}/activate-subscription`,
     );
     return response.data;
   },

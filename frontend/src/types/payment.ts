@@ -3,11 +3,12 @@ export type PaymentStatus =
   | "VERIFIED"
   | "REJECTED";
 
-export type PaymentMethod = "VODAFONE_CASH" | "INSTAPAY";
+export type PaymentMethod = "VODAFONE_CASH" | "INSTAPAY" | "BANK_TRANSFER";
 
 export interface PaymentInstructions {
   vodafone_cash: string;
   instapay: string;
+  bank_transfer: string;
 }
 
 export interface Payment {
@@ -18,6 +19,7 @@ export interface Payment {
   currency: string;
   status: PaymentStatus;
   payment_method: string;
+  transfer_reference?: string | null;
   receipt_url: string;
   rejection_reason: string | null;
   created_at: string;

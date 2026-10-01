@@ -2,6 +2,7 @@ import { api } from "./api";
 import type {
   Payment,
   PaymentInstructions,
+  PaymentMethod,
   PaymentVerificationPayload,
 } from "@/types/payment";
 
@@ -13,12 +14,14 @@ export const paymentService = {
 
   async submitPayment(
     trackId: number,
-    method: string,
+    method: PaymentMethod,
     receiptFile: File,
+    transferReference: string,
   ): Promise<Payment> {
     const formData = new FormData();
     formData.append("track_id", String(trackId));
     formData.append("payment_method", method);
+    formData.append("transfer_reference", transferReference.trim());
     formData.append("receipt", receiptFile);
 
     const response = await api.post<Payment>("/api/v1/payments/submit", formData, {
