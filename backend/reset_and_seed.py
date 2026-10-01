@@ -16,129 +16,131 @@ if not DATABASE_URL:
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+TRACK_DATA = {
+    "name": "هندسة الباك إند والذكاء الاصطناعي",
+    "slug": "backend-ai-engineering",
+    "description": "مسار عملي متكامل لبناء خدمات باك إند موثوقة باستخدام Python وFastAPI وPostgreSQL، ودمج نماذج اللغة والبحث المتجهي وأنظمة RAG، ثم تجهيز التطبيق للنشر والتشغيل الإنتاجي.",
+    "ordering": 1,
+    "is_premium": True,
+    "price": 5600.00,
+    "currency": "EGP",
+    "is_active": True,
+}
+
 YOUTUBE_EMBED_PATTERN = re.compile(
     r"https://www\.youtube\.com/embed/[A-Za-z0-9_-]{11}"
 )
 
-BACKEND_AI_MODULES = [
+MODULES_DATA = [
     {
         "title": "Module 1: أساسيات الباك إند وبايثون المتقدمة",
-        "description": "تأسيس قوي في Python وتصميم واجهات الباك إند والتحقق من البيانات وبناء تطبيقات قابلة للصيانة.",
+        "description": "يبني هذا المسار أساساً عملياً في Python غير المتزامنة، وتصميم واجهات FastAPI، والتحقق من البيانات باستخدام Pydantic V2.",
         "ordering": 1,
         "lessons": [
             {
-                "title": "مقدمة في هندسة الباك إند وPython",
-                "description": "تعرّف على دور الباك إند في استقبال الطلبات وتنفيذ منطق التطبيق والتعامل مع قواعد البيانات وإرجاع استجابات واضحة وآمنة.",
-                "content": "تشرح هذه الوحدة دورة حياة الطلب من العميل إلى الخادم ثم قاعدة البيانات والعودة. ستتعرف على مسؤوليات طبقة الباك إند، وكيف تساعد Python على بناء خدمات قابلة للاختبار والتوسع، مع التمييز بين منطق المجال وطبقة HTTP.",
-                "ordering": 1,
-                "video_url": "https://www.youtube.com/embed/rfscVS0vtbw",
-            },
-            {
-                "title": "التحقق من البيانات باستخدام Pydantic",
-                "description": "افهم كيف تحوّل نماذج Pydantic المدخلات الخارجية إلى بيانات موثوقة، وتفرض القيود، وتعرض أخطاء تحقق مفهومة.",
-                "content": "ستبني نماذج typed للطلبات والاستجابات، وتستخدم الحقول المقيدة والتحقق من القيم الاختيارية والبيانات المتداخلة. قارن بين type hints التي تساعد الفحص الثابت والتحقق وقت التشغيل الذي يمنع البيانات غير الصالحة من دخول التطبيق.",
-                "ordering": 2,
-                "video_url": "https://www.youtube.com/embed/M81pfi64eeM",
-            },
-            {
                 "title": "البرمجة غير المتزامنة Async/Await في Python",
-                "description": "تعلّم استخدام coroutines وevent loop لتحسين التعامل مع عمليات الشبكة وI/O دون حجب بقية الطلبات.",
-                "content": "تشرح المادة الفرق بين الدوال المتزامنة وغير المتزامنة، وكيفية انتظار عمليات I/O وإدارة الإلغاء والمهلات والأخطاء. ستتعرف أيضاً على الحالات التي لا يسرّع فيها async العمل، مثل الحسابات الثقيلة أو استدعاء مكتبات متزامنة حاجبة.",
-                "ordering": 3,
+                "description": "تعرّف على coroutines وevent loop وكيفية استخدام await لتنفيذ عمليات الشبكة وI/O بكفاءة، مع فهم الإلغاء والمهلات ومعالجة الأخطاء ومتى لا يكون async مناسباً.",
+                "content": "تبدأ المادة بالفرق بين الدالة العادية وasync def، ثم تشرح إنشاء coroutine وتشغيلها وانتظارها باستخدام await. ستتدرب على تشغيل عدة مهام I/O بالتزامن، وإضافة timeout، والتعامل مع cancellation والاستثناءات. كما ستتعلم لماذا لا يؤدي async تلقائياً إلى تسريع العمليات الحسابية، وكيف يمكن لاستدعاء مكتبة متزامنة حاجبة أن يوقف event loop، وكيف تختار بين تنفيذ متزامن وغير متزامن وفق طبيعة العمل.",
+                "ordering": 1,
                 "video_url": "https://www.youtube.com/embed/t5Bo1Je9EmE",
             },
-        ],
-        "resources": [
-            {"title": "FastAPI Cheat Sheet (PDF)", "file_url": "https://example.com/fastapi-cheatsheet.pdf", "resource_type": "pdf"}
+            {
+                "title": "بناء واجهات API باستخدام FastAPI",
+                "description": "تعلّم تنظيم مشروع FastAPI وبناء endpoints واضحة مع dependency injection والتوثيق التلقائي واختبارات تغطي الاستجابات والأخطاء.",
+                "content": "تشرح الوحدة تقسيم التطبيق إلى routers وschemas وservices وCRUD، وتعريف مسارات GET وPOST مع path وquery parameters وrequest bodies. ستستخدم dependencies لمشاركة جلسة قاعدة البيانات والتحقق من المستخدم، وتضبط status codes والاستجابات وتفحص OpenAPI. كما ستضيف اختبارات للمدخلات الصحيحة والخاطئة، وتتعرف على الفرق بين دوال المسار المتزامنة وغير المتزامنة وكيفية تجنب حجب event loop.",
+                "ordering": 2,
+                "video_url": "https://www.youtube.com/embed/SR5NYCdzKkc",
+            },
+            {
+                "title": "التحقق من البيانات باستخدام Pydantic V2",
+                "description": "افهم نماذج Pydantic V2 وحقولها المقيدة وعمليات serialization والتحقق المخصص لبناء حدود آمنة بين API وبيانات التطبيق.",
+                "content": "ستنشئ BaseModel لمدخلات ومخرجات API، وتحدد أنواع الحقول والقيم الافتراضية والقيود باستخدام Field. تتناول المادة الحقول الاختيارية والنماذج المتداخلة وfield_validator وmodel_validator، ثم تشرح تحويل البيانات باستخدام model_validate وmodel_dump. ستفرق بين type hints المستخدمة للفحص الثابت والتحقق الفعلي وقت التشغيل، وتكتب اختبارات للحالات الصحيحة والقيم المفقودة والمدخلات غير الصالحة مع رسائل أخطاء مفيدة.",
+                "ordering": 3,
+                "video_url": "https://www.youtube.com/embed/M81pfi64eeM",
+            },
         ],
     },
     {
-        "title": "Module 2: قواعد البيانات وإدارة التخزين",
-        "description": "صمّم قواعد بيانات PostgreSQL سليمة، واستخدم SQLAlchemy وAlembic لإدارة البيانات وتطور المخطط بأمان.",
+        "title": "Module 2: قواعد البيانات وإدارة التخزين المتقدمة",
+        "description": "يركز هذا المسار على تصميم PostgreSQL، وبناء طبقة ORM باستخدام SQLAlchemy، وإدارة تغييرات المخطط والبيانات باستخدام Alembic.",
         "ordering": 2,
         "lessons": [
             {
                 "title": "تصميم قواعد بيانات PostgreSQL والعلاقات",
-                "description": "تعرّف على تصميم الجداول والعلاقات والمفاتيح والقيود التي تحافظ على صحة البيانات في PostgreSQL.",
-                "content": "ستحوّل متطلبات التطبيق إلى جداول مترابطة باستخدام المفاتيح الأساسية والخارجية، وتفهم التطبيع والعلاقات واحد إلى متعدد ومتعدد إلى متعدد. تتضمن المادة أمثلة على الفهارس والقيود والمعاملات وكيفية تجنب التكرار وحالات البيانات غير المتسقة.",
+                "description": "تعلّم تحويل متطلبات المنتج إلى مخطط PostgreSQL سليم باستخدام التطبيع والمفاتيح والعلاقات والقيود والفهارس المناسبة.",
+                "content": "تبدأ الوحدة بتحديد الكيانات وخصائصها ثم تصميم الجداول والمفاتيح الأساسية والخارجية. ستدرس التطبيع لتقليل التكرار، وتمثيل علاقات one-to-many وmany-to-many، واستخدام UNIQUE وCHECK وNOT NULL لحماية قواعد المجال. كما ستراجع المعاملات والعزل والفهارس، وتقرأ أمثلة على JOIN وGROUP BY، ثم تستخدم EXPLAIN لفهم خطط الاستعلام وتختار الفهارس بناء على أنماط القراءة والكتابة الفعلية.",
                 "ordering": 1,
                 "video_url": "https://www.youtube.com/embed/26ls5lNiijk",
             },
             {
-                "title": "إدارة البيانات باستخدام SQLAlchemy ORM",
-                "description": "استخدم نماذج SQLAlchemy والعلاقات والجلسات لتنفيذ استعلامات واضحة وإدارة المعاملات بكفاءة.",
-                "content": "تشرح الوحدة ربط كائنات Python بالجداول، وكتابة الاستعلامات باستخدام واجهة SQLAlchemy 2.x، وإدارة Session وحدود المعاملة. ستقارن استراتيجيات تحميل العلاقات وتتعرف على مشكلة N+1 وكيفية اختيار التحميل المناسب.",
+                "title": "نماذج SQLAlchemy وإدارة الجلسات",
+                "description": "استخدم SQLAlchemy ORM والعلاقات وواجهة select في الإصدار 2.x مع ضبط عمر Session وحدود المعاملات وتجنب استعلامات N+1.",
+                "content": "ستعرّف نماذج ORM مرتبطة بجداول PostgreSQL، وتنفذ القراءة والإنشاء والتحديث باستخدام select وSession. تشرح المادة العلاقات بين Track وModule وLesson واستراتيجيات lazy loading وselectinload وjoinedload، وأثر كل منها على عدد الاستعلامات. ستتعلم إدارة commit وrollback عند حدود العملية، وعدم مشاركة Session بين مهام متزامنة، وكيفية فحص SQL الناتج واختبار سلامة البيانات عند حدوث استثناء.",
                 "ordering": 2,
                 "video_url": "https://www.youtube.com/embed/529LYDgRTgQ",
             },
             {
-                "title": "ترحيل مخطط قاعدة البيانات باستخدام Alembic",
-                "description": "تعلّم إنشاء مراجعات Alembic ومراجعتها وتطبيقها أو التراجع عنها دون فقدان بيانات البيئة.",
-                "content": "ستربط Alembic ببيانات SQLAlchemy الوصفية، وتنشئ migrations لتغييرات المخطط، ثم تراجع SQL الناتج قبل التطبيق. توضح المادة ترتيب الترحيلات، وكتابة التغييرات القابلة للعكس، والتعامل مع تحديثات البيانات والتوافق بين إصدارات التطبيق.",
+                "title": "ترحيل المخطط باستخدام Alembic وSQLAlchemy",
+                "description": "أنشئ migrations قابلة للمراجعة والتكرار، وطبّق تغييرات المخطط والبيانات بأمان عبر بيئات التطوير والاختبار والإنتاج.",
+                "content": "تشرح الوحدة إعداد Alembic وربطه بmetadata الخاصة بـSQLAlchemy، وإنشاء revision ومراجعة أوامر upgrade وdowngrade قبل تشغيلها. ستتدرب على إضافة عمود أو فهرس وتعديل قيود، وعلى كتابة data migration منفصلة عند الحاجة. كما ستتعلم ترتيب revisions، والتعامل مع قاعدة بيانات قائمة، وتخطيط تغييرات متوافقة أثناء النشر بحيث لا يعتمد الإصدار الجديد على مخطط لم يصل بعد إلى جميع البيئات.",
                 "ordering": 3,
                 "video_url": "https://www.youtube.com/embed/e8NnDz8uT7o",
             },
         ],
-        "resources": [
-            {"title": "SQL & PostgreSQL Optimization Guide", "file_url": "https://example.com/sql-guide.pdf", "resource_type": "pdf"}
-        ],
     },
     {
-        "title": "Module 3: هندسة الذكاء الاصطناعي وأنظمة RAG",
-        "description": "ابنِ ميزات ذكاء اصطناعي تربط النماذج اللغوية بالبحث الدلالي ومصادر المعرفة مع الحفاظ على موثوقية الإجابات.",
+        "title": "Module 3: هندسة الذكاء الاصطناعي وتكامل أنظمة RAG",
+        "description": "يقدم هذا المسار صياغة prompts لنماذج اللغة، والبحث المتجهي باستخدام pgvector، وبناء خط RAG كامل متصل بخدمة الباك إند.",
         "ordering": 3,
         "lessons": [
             {
-                "title": "أساسيات نماذج اللغة الكبيرة وصياغة الأوامر",
-                "description": "افهم طريقة عمل نماذج اللغة الكبيرة، وصمّم prompts واضحة تحدد المهمة والسياق وشكل الإجابة المطلوبة.",
-                "content": "تقدم هذه المادة المفاهيم الأساسية للشبكات العصبية ونماذج اللغة، ثم تشرح بناء prompt يحدد الدور والمهمة والسياق والقيود. ستتعلم فصل التعليمات عن بيانات المستخدم، وتقييم المخرجات، ومعالجة الإجابات غير الدقيقة بأمان.",
+                "title": "نماذج اللغة الكبيرة وهندسة Prompt Engineering",
+                "description": "تعلّم كتابة تعليمات واضحة للنماذج اللغوية تحدد الدور والهدف والسياق والقيود وشكل المخرجات، مع تقييم الجودة وتقليل الإجابات غير المدعومة.",
+                "content": "تشرح المادة كيف تعالج نماذج اللغة النصوص وما الذي تعنيه الرموز والسياق وحدود طول prompt. ستبني تعليمات تتضمن دوراً ومهمة وسياقاً وأمثلة وقيوداً صريحة، وتفصل مدخلات المستخدم عن تعليمات النظام. كما ستتعلم طلب مخرجات منظمة، واختبار prompt على حالات متنوعة، ورصد الهلوسة والتحيز، وعدم اعتبار صياغة prompt بديلاً عن التفويض والتحقق من البيانات في التطبيق.",
                 "ordering": 1,
-                "video_url": "https://www.youtube.com/embed/aircAruvnKk",
+                "video_url": "https://www.youtube.com/embed/jC4v5AS4RIM",
             },
             {
-                "title": "Embeddings وقواعد البيانات المتجهة",
-                "description": "تعلّم تمثيل النصوص كمتجهات رقمية واستخدام التشابه الدلالي لاسترجاع المقاطع ذات الصلة.",
-                "content": "تشرح الوحدة تحويل النص إلى embeddings، وتقسيم المستندات إلى مقاطع، وتخزين المتجهات مع بياناتها الوصفية. ستتعرف على البحث بالتشابه، واختيار حجم المقاطع، وتصفية النتائج بحسب المسار أو المستخدم لضمان أن الاسترجاع مناسب ومصرح به.",
+                "title": "Embeddings والبحث المتجهي باستخدام pgvector",
+                "description": "افهم تحويل النص إلى embeddings وتخزينها في PostgreSQL عبر pgvector، ثم استرجاع المقاطع باستخدام مقاييس التشابه والفهارس المتجهية.",
+                "content": "ستقسم المستندات إلى chunks مناسبة، وتنشئ embedding لكل مقطع وتحفظ المتجه مع النص ومعرّف المصدر والبيانات الوصفية. تشرح الوحدة نوع vector في pgvector ومقاييس المسافة الشائعة، وكيفية تنفيذ nearest-neighbor search وإضافة فهارس مثل HNSW عند ملاءمتها. ستوازن بين حجم المقطع والدقة والتكلفة، وتضيف شروط تصفية بحسب track أو lesson قبل إرجاع النتائج لمنع تسرب بيانات غير مصرح بها.",
                 "ordering": 2,
                 "video_url": "https://www.youtube.com/embed/klTvEwg3oJ4",
             },
             {
-                "title": "بناء نظام RAG متكامل وربطه بالباك إند",
-                "description": "اربط الاسترجاع الدلالي بنموذج لغوي لإنتاج إجابات مستندة إلى محتوى موثوق مع توضيح حدود الأدلة.",
-                "content": "ستبني مسار RAG يبدأ باسترجاع المقاطع المناسبة، ثم يمررها إلى النموذج ضمن حدود سياق واضحة. تغطي المادة عزل مصادر المعرفة، ورفض الإجابة عند غياب الأدلة، وإرجاع المراجع، وقياس جودة الاسترجاع والدقة والتكلفة وزمن الاستجابة.",
+                "title": "تصميم وتنفيذ بنية RAG متكاملة",
+                "description": "اربط ingestion والتقسيم وembeddings والاسترجاع وتوليد الإجابة في خط RAG يعرض الأدلة ويتعامل بوضوح مع نقص السياق.",
+                "content": "تتبع الوحدة خط المعالجة من إدخال المستندات وتنظيفها وتقسيمها إلى chunks، ثم إنشاء embeddings وفهرستها واسترجاع أكثر المقاطع صلة بالسؤال. ستبني prompt يحيط السياق المسترجع بحدود واضحة، وتضيف مصادر الإجابة، وتعيد رداً صريحاً عند غياب أدلة كافية. كما ستدرس عزل المستأجرين والصلاحيات، وحدود السياق، والمهلات والأخطاء، وقياس جودة الاسترجاع والدقة وزمن الاستجابة واستهلاك الرموز.",
                 "ordering": 3,
                 "video_url": "https://www.youtube.com/embed/T-D1OfcDW1M",
             },
         ],
-        "resources": [
-            {"title": "RAG Architecture Blueprint", "file_url": "https://example.com/rag-blueprint.pdf", "resource_type": "pdf"}
-        ],
     },
     {
-        "title": "Module 04: Production and Deployment",
-        "description": "جهّز خدمات الباك إند للإنتاج باستخدام الحاويات وإدارة الإعدادات والفحوصات وخطوات النشر المستمر.",
+        "title": "Module 4: النشر السحابي والتشغيل الإنتاجي - Module 04",
+        "description": "جهّز تطبيق الباك إند للعمل الإنتاجي عبر إعداد الخادم وGunicorn/Uvicorn، ثم أتمتة الفحوصات والبناء والنشر إلى Vercel وRailway.",
         "ordering": 4,
         "lessons": [
             {
-                "title": "إنشاء حاويات Docker لخدمة FastAPI",
-                "description": "تعلّم بناء صورة Docker صغيرة وقابلة للتكرار وتشغيل خدمة FastAPI بإعدادات آمنة وفحوصات صحة واضحة.",
-                "content": "تشرح المادة كتابة Dockerfile، واختيار صورة أساس مناسبة، وتثبيت الاعتماديات، وتشغيل التطبيق بعملية رئيسية صحيحة. ستتعرف على تمرير الإعدادات وقت التشغيل، وعدم تضمين الأسرار في الصورة، وإضافة health checks ومستخدم تشغيل محدود الصلاحيات.",
+                "title": "إعداد خدمة الباك إند للإنتاج",
+                "description": "جهّز تطبيق FastAPI للإنتاج بإعدادات منفصلة وآمنة، وملفات تشغيل وحاويات قابلة للتكرار وفحوصات صحة ومراقبة أساسية.",
+                "content": "تشرح الوحدة نقل الإعدادات إلى environment variables وإدارة الأسرار خارج المستودع، وبناء صورة Docker وتشغيل التطبيق بمستخدم محدود الصلاحيات. ستضيف health وreadiness checks، وتضبط logging دون تسجيل tokens أو بيانات حساسة، وتفصل إعدادات التطوير عن الإنتاج. كما ستراجع متطلبات PostgreSQL والتخزين الدائم والنسخ الاحتياطي ومراجعة migrations قبل إتاحة الإصدار للمستخدمين.",
                 "ordering": 1,
                 "video_url": "https://www.youtube.com/embed/3c-iBn73dDE",
             },
             {
-                "title": "تشغيل الخدمات باستخدام Docker Compose",
-                "description": "نسّق خدمة API وقاعدة البيانات والشبكات والأحجام الدائمة باستخدام Docker Compose محلياً وبشكل قابل للتكرار.",
-                "content": "ستعرّف خدمات التطبيق وقاعدة البيانات في ملف Compose، وتضبط الشبكات ومتغيرات البيئة والأحجام الدائمة وفحوصات الجاهزية. توضح الوحدة الفرق بين ترتيب بدء الحاويات وجاهزية الخدمة، وكيفية فحص السجلات وتشخيص أعطال الاتصال.",
+                "title": "تشغيل FastAPI باستخدام Gunicorn وUvicorn",
+                "description": "افهم دور Uvicorn كخادم ASGI ودور Gunicorn في إدارة workers، واضبط عدد العمليات والمهلات والإغلاق الملائم لحمل التطبيق.",
+                "content": "توضح المادة الفرق بين ASGI server وprocess manager، وكيف يشغّل Gunicorn workers من Uvicorn لتطبيق FastAPI. ستختار إعدادات workers والمهلات وفق موارد المنصة ونوع I/O، وتتعامل مع graceful shutdown وإعادة تشغيل العمال، وتفحص سجلات بدء التشغيل وأخطاء health checks. كما ستتعرف على أثر عدد العمليات على اتصالات قاعدة البيانات والذاكرة، ولماذا يجب اختبار إعداد التشغيل الفعلي بدلاً من استخدام خادم التطوير في الإنتاج.",
                 "ordering": 2,
-                "video_url": "https://www.youtube.com/embed/HG6yIjZapSA",
+                "video_url": "https://www.youtube.com/embed/R8_veQiYBjI",
             },
             {
-                "title": "خطوط CI/CD والنشر ومراقبة الخدمة",
-                "description": "أنشئ خط CI/CD يشغّل الفحوصات ويبني artifact موثوقاً قبل النشر، ثم راقب صحة الخدمة بعد الإصدار.",
-                "content": "تغطي المادة مراحل التحقق الآلي والاختبارات وبناء صورة الإصدار ونشرها، مع إدارة الأسرار خارج المستودع. ستخطط لترحيلات قاعدة البيانات وفحوصات readiness وliveness، وتتعلم التراجع عن إصدار معيب ومراجعة السجلات ومؤشرات الأداء بعد النشر.",
+                "title": "CI/CD والنشر على Vercel وRailway",
+                "description": "أنشئ خط CI/CD يشغّل الاختبارات ويبني الواجهة والخادم، ثم ينشرهما على Vercel وRailway مع إعداد الأسرار والنطاقات وقاعدة البيانات.",
+                "content": "سترتب مراحل CI للتحقق من التنسيق والأنواع والاختبارات وبناء artifacts قبل الدمج، ثم تهيئ CD لنشر الواجهة على Vercel وخدمة FastAPI وقاعدة البيانات على Railway. تشرح الوحدة ضبط متغيرات البيئة والنطاقات وCORS، وتشغيل migrations بطريقة آمنة، ومراجعة health checks والسجلات بعد النشر. كما ستضع خطة rollback للإصدارات الفاشلة، وتتحقق من أن أسرار الإنتاج لا تظهر في ملفات البناء أو سجلات CI.",
                 "ordering": 3,
-                "video_url": "https://www.youtube.com/embed/R8_veQiYBjI",
+                "video_url": "https://www.youtube.com/embed/HG6yIjZapSA",
             },
         ],
     },
@@ -146,44 +148,40 @@ BACKEND_AI_MODULES = [
 
 
 def validate_curriculum_data() -> None:
+    if TRACK_DATA["slug"] != "backend-ai-engineering" or TRACK_DATA["price"] != 5600.00:
+        raise ValueError("Backend & AI track identity or pricing is invalid.")
+    if len(MODULES_DATA) != 4:
+        raise ValueError("Backend & AI curriculum must contain exactly four modules.")
+
     expected_orders = [1, 2, 3, 4]
-    actual_orders = [module.get("ordering") for module in BACKEND_AI_MODULES]
-    if actual_orders != expected_orders:
-        raise ValueError("Backend & AI curriculum must contain modules 1 through 4 in order.")
+    if [module["ordering"] for module in MODULES_DATA] != expected_orders:
+        raise ValueError("Modules must be ordered from 1 through 4.")
 
-    for module in BACKEND_AI_MODULES:
-        lessons = module.get("lessons")
-        if not isinstance(lessons, list) or not lessons:
-            raise ValueError(f"Module {module.get('ordering')} must contain lessons.")
-        for lesson in lessons:
+    for module in MODULES_DATA:
+        if not module["lessons"]:
+            raise ValueError(f"Module {module['title']} must contain lessons.")
+        for lesson_order, lesson in enumerate(module["lessons"], start=1):
             required_fields = {"title", "description", "content", "ordering", "video_url"}
-            missing_fields = required_fields - lesson.keys()
-            if missing_fields:
-                raise ValueError(
-                    f"Lesson {lesson.get('title')} is missing fields: "
-                    f"{', '.join(sorted(missing_fields))}."
-                )
-            description = lesson.get("description")
-            content = lesson.get("content")
-            video_url = lesson.get("video_url")
-            if not isinstance(description, str) or not description.strip():
-                raise ValueError(f"Lesson {lesson.get('title')} must have a description.")
-            if not re.search(r"[\u0600-\u06ff]", description):
-                raise ValueError(f"Lesson {lesson.get('title')} description must be Arabic.")
-            if not isinstance(content, str) or not content.strip():
-                raise ValueError(f"Lesson {lesson.get('title')} must have content.")
-            if not isinstance(video_url, str) or not YOUTUBE_EMBED_PATTERN.fullmatch(video_url):
-                raise ValueError(f"Lesson {lesson.get('title')} must have a YouTube embed URL.")
+            if required_fields - lesson.keys():
+                raise ValueError(f"Lesson {lesson.get('title')} is missing required fields.")
+            if lesson["ordering"] != lesson_order:
+                raise ValueError(f"Lesson ordering is invalid in {module['title']}.")
+            if not lesson["description"].strip() or not re.search(r"[\u0600-\u06ff]", lesson["description"]):
+                raise ValueError(f"Lesson {lesson['title']} needs an Arabic description.")
+            if not lesson["content"].strip() or not re.search(r"[\u0600-\u06ff]", lesson["content"]):
+                raise ValueError(f"Lesson {lesson['title']} needs Arabic content.")
+            if not YOUTUBE_EMBED_PATTERN.fullmatch(lesson["video_url"]):
+                raise ValueError(f"Lesson {lesson['title']} needs a YouTube embed URL.")
 
 
-def reset_and_seed():
+def reset_and_seed() -> None:
     from app.models.enrollment import Enrollment
     from app.models.track import Lesson, Resource, Track, TrackModule
     from app.models.user import User
 
     validate_curriculum_data()
-    print("🧹 Cleaning existing database (users, enrollments, tracks, modules)...")
     try:
+        print("🧹 Cleaning existing database and seeding Backend & AI Engineering...")
         with SessionLocal.begin() as db:
             db.query(Enrollment).delete()
             db.query(Resource).delete()
@@ -192,76 +190,30 @@ def reset_and_seed():
             db.query(Track).delete()
             db.query(User).delete()
 
-            tracks_data = [
-                {
-                    "name": "هندسة الباك إند والذكاء الاصطناعي",
-                    "slug": "backend-ai-engineering",
-                    "description": "مسار متكامل من الصفر للاحتراف. تعلم بناء أنظمة قوية باستخدام Python و PostgreSQL و FastAPI، مع دمج نماذج الذكاء الاصطناعي (RAG) وتصميم قواعد البيانات المتقدمة.",
-                    "ordering": 1,
-                    "is_premium": True,
-                    "price": 5400.00,
-                    "currency": "EGP",
-                    "is_active": True,
-                },
-                {
-                    "name": "برمجة الأنظمة المدمجة وشرائح السيليكون",
-                    "slug": "embedded-systems-microchips",
-                    "description": "احتراف لغة C/C++، التعامل العميق مع متحكمات ARM Cortex-M، برمجة أنظمة الزمن الفعلية (RTOS)، وتصميم اللوحة المطبوعة (PCB Design) كمهندس محترف.",
-                    "ordering": 2,
-                    "is_premium": True,
-                    "price": 600.00,
-                    "currency": "EGP",
-                    "is_active": True,
-                },
-                {
-                    "name": "دبلومة الميكاترونكس والروبوتات",
-                    "slug": "mechatronics-robotics",
-                    "description": "من الأساسيات الفيزيائية إلى أنظمة التحكم المتقدمة، تصميم وبرمجة الروبوتات الذكية، استيعاب الـ ROS، وتطبيقات إنترنت الأشياء (IoT) للتحكم الصناعي.",
-                    "ordering": 3,
-                    "is_premium": True,
-                    "price": 550.00,
-                    "currency": "EGP",
-                    "is_active": True,
-                },
-            ]
+            track = Track(**TRACK_DATA)
+            db.add(track)
+            db.flush()
 
-            created_tracks = {}
-            for track_data in tracks_data:
-                track = Track(**track_data)
-                db.add(track)
-                db.flush()
-                created_tracks[track.slug] = track
-                print(
-                    f"✅ Created track: {track.name} (ID: {track.id}, "
-                    f"Premium: {track.is_premium}, Price: {track.price} {track.currency})"
-                )
-
-            ai_track = created_tracks["backend-ai-engineering"]
-            expected_lesson_count = sum(
-                len(module_data["lessons"]) for module_data in BACKEND_AI_MODULES
-            )
-            for module_data in BACKEND_AI_MODULES:
+            for module_data in MODULES_DATA:
                 module = TrackModule(
-                    track_id=ai_track.id,
+                    track_id=track.id,
                     title=module_data["title"],
                     description=module_data["description"],
                     ordering=module_data["ordering"],
                 )
                 db.add(module)
                 db.flush()
-
                 for lesson_data in module_data["lessons"]:
                     db.add(Lesson(module_id=module.id, **lesson_data))
-                for resource_data in module_data.get("resources", []):
-                    db.add(Resource(module_id=module.id, **resource_data))
 
             db.flush()
             seeded_lessons = (
                 db.query(Lesson)
                 .join(TrackModule, Lesson.module_id == TrackModule.id)
-                .filter(TrackModule.track_id == ai_track.id)
+                .filter(TrackModule.track_id == track.id)
                 .all()
             )
+            expected_lesson_count = sum(len(module["lessons"]) for module in MODULES_DATA)
             if len(seeded_lessons) != expected_lesson_count:
                 raise RuntimeError("The seeded lesson count does not match the curriculum.")
             for lesson in seeded_lessons:
@@ -277,10 +229,9 @@ def reset_and_seed():
                         f"Lesson {lesson.title!r} is missing required curriculum details."
                     )
 
-        print("✨ Existing data was cleaned and the database transaction committed.")
-        print("🚀 Successfully reset DB and seeded four complete Backend & AI modules!")
-    except Exception as e:
-        print(f"❌ Error during reset and seed: {e}")
+        print("🚀 Database reset completed with one track, four modules, and complete lessons.")
+    except Exception as error:
+        print(f"❌ Error during reset and seed: {error}")
         raise
     finally:
         engine.dispose()
