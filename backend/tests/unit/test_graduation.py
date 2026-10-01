@@ -1,5 +1,5 @@
-from app.models.certificate import (
-    Certificate,
+from app.models.certificate import Certificate
+from app.models.graduation import (
     GraduationCheck,
     GraduationResult,
     GraduationRule,

@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -71,3 +72,18 @@ class EnrollmentDetail(Enrollment):
     progress: list[StudentProgressDetail] = Field(
         default_factory=list,
     )
+
+
+class AdminEnrollmentStatusUpdate(BaseModel):
+    status: Literal["active", "cancelled"]
+
+
+class AdminEnrollmentResponse(BaseModel):
+    id: int
+    user_id: int
+    student_name: str
+    student_email: str
+    track_id: int
+    track_name: str
+    status: str
+    enrolled_at: datetime

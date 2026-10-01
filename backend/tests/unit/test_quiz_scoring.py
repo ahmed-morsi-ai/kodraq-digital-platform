@@ -4,76 +4,10 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import status
 
-from app.crud.crud_user import user as crud_user
-from app.models.quiz import Question, QuestionOption, Quiz, QuizQuestion
+from app.models.quiz import Quiz
 from app.models.quiz_attempt import QuizAttempt
-from app.schemas.user import UserCreate
-
-
-def _create_user_and_get_token(
-    client,
-    db_session,
-    *,
-    email: str,
-    full_name: str,
-) -> dict[str, str]:
-    crud_user.create(
-        db_session,
-        obj_in=UserCreate(
-            email=email,
-            password="Password123!",
-            full_name=full_name,
-        ),
-    )
-
-    response = client.post(
-        "/api/v1/login/access-token",
-        data={
-            "username": email,
-            "password": "Password123!",
-        },
-    )
-    assert response.status_code == status.HTTP_200_OK
-
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
-
-
-def _create_quiz(
-    db_session,
-    *,
-    time_limit_minutes: int | None = 30,
-) -> Quiz:
-    quiz = Quiz(
-        title="Scoring Engine Quiz",
-        description="TASK-5.3.5 scoring and anti-cheat test quiz.",
-        passing_score=50,
-        time_limit_minutes=time_limit_minutes,
-        is_active=True,
-    )
-
-    question = Question(
-        text="Which answer is correct?",
-        question_type="MULTIPLE_CHOICE",
-        difficulty=1,
-        points=10,
-        options=[
-            QuestionOption(text="Correct", is_correct=True),
-            QuestionOption(text="Incorrect", is_correct=False),
-        ],
-    )
-
-    quiz.question_links = [
-        QuizQuestion(
-            question=question,
-            ordering=1,
-        )
-    ]
-
-    db_session.add(quiz)
-    db_session.commit()
-    db_session.refresh(quiz)
-
-    return quiz
+from tests.quiz_helpers import create_user_and_get_token as _create_user_and_get_token
+from tests.quiz_helpers import create_quiz as _create_quiz
 
 
 def _start_attempt(client, student, quiz: Quiz) -> int:
@@ -96,9 +30,7 @@ def test_perfect_score_calculation_and_passed_outcome(client, db_session):
     attempt_id = _start_attempt(client, student, quiz)
 
     question = quiz.question_links[0].question
-    correct_option = next(
-        option for option in question.options if option.is_correct
-    )
+    correct_option = next(option for option in question.options if option.is_correct)
 
     response = client.post(
         f"/api/v1/quiz-attempts/{attempt_id}/submit",
@@ -171,9 +103,7 @@ def test_flagged_attempt_is_automatically_failed_and_zero_score(
     attempt_id = _start_attempt(client, student, quiz)
 
     question = quiz.question_links[0].question
-    correct_option = next(
-        option for option in question.options if option.is_correct
-    )
+    correct_option = next(option for option in question.options if option.is_correct)
 
     response = client.post(
         f"/api/v1/quiz-attempts/{attempt_id}/submit",
@@ -214,12 +144,11 @@ def test_expired_attempt_is_flagged_and_penalized(client, db_session):
     assert attempt is not None
 
     attempt.started_at = datetime.now(UTC) - timedelta(minutes=11)
+    attempt.deadline_at = datetime.now(UTC) - timedelta(minutes=1)
     db_session.commit()
 
     question = quiz.question_links[0].question
-    correct_option = next(
-        option for option in question.options if option.is_correct
-    )
+    correct_option = next(option for option in question.options if option.is_correct)
 
     response = client.post(
         f"/api/v1/quiz-attempts/{attempt_id}/submit",
@@ -261,9 +190,7 @@ def test_completed_attempt_score_cannot_be_tampered(client, db_session):
     attempt_id = _start_attempt(client, student, quiz)
 
     question = quiz.question_links[0].question
-    correct_option = next(
-        option for option in question.options if option.is_correct
-    )
+    correct_option = next(option for option in question.options if option.is_correct)
     incorrect_option = next(
         option for option in question.options if not option.is_correct
     )

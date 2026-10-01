@@ -1,87 +1,12 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
 from fastapi import status
 
 from app.crud.crud_user import user as crud_user
-from app.models.quiz import Question, QuestionOption, Quiz, QuizQuestion
-from app.models.role import Role
-from app.schemas.user import UserCreate
-
-
-def _create_user_and_get_token(
-    client,
-    db_session,
-    *,
-    email: str,
-    full_name: str,
-    role_name: str | None = None,
-) -> dict[str, str]:
-    role_id = None
-
-    if role_name:
-        role = db_session.query(Role).filter(Role.name == role_name).first()
-        if role is None:
-            role = Role(name=role_name, description=f"{role_name} role")
-            db_session.add(role)
-            db_session.flush()
-        role_id = role.id
-
-    crud_user.create(
-        db_session,
-        obj_in=UserCreate(
-            email=email,
-            password="Password123!",
-            full_name=full_name,
-            role_id=role_id,
-        ),
-    )
-
-    response = client.post(
-        "/api/v1/login/access-token",
-        data={
-            "username": email,
-            "password": "Password123!",
-        },
-    )
-    assert response.status_code == status.HTTP_200_OK
-
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
-
-
-def _create_quiz(db_session, *, time_limit_minutes: int | None = 30) -> Quiz:
-    quiz = Quiz(
-        title="Attempt System Quiz",
-        description="Quiz attempt integration test.",
-        passing_score=50,
-        time_limit_minutes=time_limit_minutes,
-        is_active=True,
-    )
-
-    question = Question(
-        text="Which answer is correct?",
-        question_type="MULTIPLE_CHOICE",
-        difficulty=1,
-        points=10,
-        options=[
-            QuestionOption(text="Correct", is_correct=True),
-            QuestionOption(text="Incorrect", is_correct=False),
-        ],
-    )
-
-    quiz.question_links = [
-        QuizQuestion(
-            question=question,
-            ordering=1,
-        )
-    ]
-
-    db_session.add(quiz)
-    db_session.commit()
-    db_session.refresh(quiz)
-
-    return quiz
+from tests.quiz_helpers import create_user_and_get_token as _create_user_and_get_token
+from tests.quiz_helpers import create_quiz as _create_quiz
 
 
 def test_student_can_start_quiz_attempt(client, db_session):
@@ -154,7 +79,7 @@ def test_attempt_owner_is_required_for_read_and_submit(client, db_session):
     assert submit_by_other.status_code == status.HTTP_403_FORBIDDEN
 
 
-def test_assignment_manager_can_list_all_quiz_attempts(client, db_session):
+def test_assigned_instructor_can_list_all_quiz_attempts(client, db_session):
     student_one = _create_user_and_get_token(
         client,
         db_session,
@@ -175,6 +100,14 @@ def test_assignment_manager_can_list_all_quiz_attempts(client, db_session):
         role_name="instructor",
     )
     quiz = _create_quiz(db_session)
+
+    from app.models.track_instructor import TrackInstructor
+
+    manager = crud_user.get_by_email(
+        db_session, email="attempt-list-instructor@example.com"
+    )
+    db_session.add(TrackInstructor(track_id=quiz.track_id, instructor_id=manager.id))
+    db_session.commit()
 
     first = client.post(
         f"/api/v1/quizzes/{quiz.id}/attempts",
@@ -215,9 +148,7 @@ def test_submit_completes_attempt_and_locks_it(client, db_session):
 
     attempt_id = started.json()["id"]
     question = quiz.question_links[0].question
-    correct_option = next(
-        option for option in question.options if option.is_correct
-    )
+    correct_option = next(option for option in question.options if option.is_correct)
 
     submitted = client.post(
         f"/api/v1/quiz-attempts/{attempt_id}/submit",
@@ -280,12 +211,11 @@ def test_expired_attempt_cannot_be_submitted(client, db_session):
     assert attempt is not None
 
     attempt.started_at = datetime.now(UTC) - timedelta(minutes=11)
+    attempt.deadline_at = datetime.now(UTC) - timedelta(minutes=1)
     db_session.commit()
 
     question = quiz.question_links[0].question
-    correct_option = next(
-        option for option in question.options if option.is_correct
-    )
+    correct_option = next(option for option in question.options if option.is_correct)
 
     response = client.post(
         f"/api/v1/quiz-attempts/{attempt_id}/submit",

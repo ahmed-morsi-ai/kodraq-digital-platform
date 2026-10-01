@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     ai,
+    admin_enrollments,
     assignments,
     certificates,
     enrollments,
@@ -12,7 +13,6 @@ from app.api.v1 import (
     payments,
     questions,
     quizzes,
-    rag,
     submissions,
     tracks,
     users,
@@ -23,6 +23,12 @@ api_router = APIRouter()
 api_router.include_router(
     login.router,
     tags=["login"],
+)
+
+api_router.include_router(
+    admin_enrollments.router,
+    prefix="/admin",
+    tags=["admin"],
 )
 
 api_router.include_router(
@@ -107,12 +113,6 @@ api_router.include_router(
     quizzes.attempt_router,
     prefix="/quiz-attempts",
     tags=["quiz-attempts"],
-)
-
-api_router.include_router(
-    rag.router,
-    prefix="/rag",
-    tags=["rag"],
 )
 
 api_router.include_router(

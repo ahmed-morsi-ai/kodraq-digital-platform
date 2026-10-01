@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.pricing import BACKEND_AI_TRACK_PRICE_EGP
 from app.db.session import SessionLocal
 from app.models.track import Track, TrackModule
 
@@ -25,12 +26,15 @@ def seed_tracks(session: Session) -> tuple[Track, int]:
             description="Master Python, FastAPI, and AI RAG systems.",
             is_active=True,
             ordering=1,
-            price=1500,
+            price=BACKEND_AI_TRACK_PRICE_EGP,
         )
         session.add(track)
         session.flush()
     else:
         track.is_active = True
+        track.is_premium = True
+        track.price = BACKEND_AI_TRACK_PRICE_EGP
+        track.currency = "EGP"
 
     existing_titles = set(
         session.scalars(

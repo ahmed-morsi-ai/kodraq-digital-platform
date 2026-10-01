@@ -3,20 +3,32 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
+import logging
 from time import perf_counter
-from typing import Any
 
 import httpx
+from google import genai
+from google.genai import errors, types
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class AIProviderError(Exception):
     """Safe, provider-neutral error raised by the gateway."""
 
+    def __init__(self, detail: str, *, status_code: int = 502) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.status_code = status_code
+
 
 class AIProviderConfigurationError(AIProviderError):
     """Raised when a provider is not configured on the server."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail, status_code=503)
 
 
 @dataclass(frozen=True)
@@ -58,9 +70,8 @@ class BaseAIProvider(ABC):
         raise NotImplementedError
 
 
-class OpenAIAdapter(BaseAIProvider):
-    name = "openai"
-    base_url = "https://api.openai.com/v1/chat/completions"
+class GeminiAdapter(BaseAIProvider):
+    name = "gemini"
 
     def __init__(
         self,
@@ -69,7 +80,7 @@ class OpenAIAdapter(BaseAIProvider):
         timeout_seconds: float | None = None,
         max_retries: int | None = None,
     ) -> None:
-        self._api_key = api_key if api_key is not None else settings.OPENAI_API_KEY
+        self._api_key = api_key if api_key is not None else settings.GEMINI_API_KEY
         self.timeout_seconds = (
             timeout_seconds
             if timeout_seconds is not None
@@ -89,70 +100,59 @@ class OpenAIAdapter(BaseAIProvider):
     ) -> ProviderCompletion:
         if not self._api_key:
             raise AIProviderConfigurationError(
-                "OpenAI provider is not configured on the server"
+                "Gemini provider is not configured on the server"
             )
 
-        payload: dict[str, Any] = {
-            "model": model,
-            "messages": list(messages),
-            "temperature": temperature,
-        }
-        if max_tokens is not None:
-            payload["max_tokens"] = max_tokens
+        model_name = model
+        prompt = self._format_prompt(messages)
+        client = genai.Client(api_key=self._api_key)
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=temperature,
+                    max_output_tokens=max_tokens,
+                    http_options=types.HttpOptions(
+                        timeout=int(self.timeout_seconds * 1000),
+                        retry_options=types.HttpRetryOptions(
+                            attempts=self.max_retries + 1
+                        ),
+                    ),
+                ),
+            )
+        except errors.APIError as error:
+            detail = self._redact_api_key(error.message or str(error))[:500]
+            logger.error(
+                "Gemini API returned HTTP %s: %s",
+                error.code,
+                detail,
+            )
+            raise AIProviderError(
+                f"Gemini API returned HTTP {error.code}: {detail}"
+            ) from None
+        except (httpx.TimeoutException, httpx.RequestError) as error:
+            logger.error(
+                "Gemini SDK transport failed: %s",
+                type(error).__name__,
+            )
+            raise AIProviderError("Gemini API request failed") from None
 
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json",
-        }
-        last_error: Exception | None = None
-        for attempt in range(self.max_retries + 1):
-            try:
-                with httpx.Client(timeout=self.timeout_seconds) as client:
-                    response = client.post(
-                        self.base_url,
-                        headers=headers,
-                        json=payload,
-                    )
-                if response.status_code >= 500:
-                    raise AIProviderError("AI provider temporarily unavailable")
-                if response.status_code >= 400:
-                    raise AIProviderError("AI provider rejected the request")
-                return self._parse_response(response.json(), model=model)
-            except (
-                httpx.TimeoutException,
-                httpx.RequestError,
-                AIProviderError,
-            ) as error:
-                last_error = error
-                if attempt >= self.max_retries:
-                    break
-
-        raise AIProviderError(
-            "AI provider request failed after retries"
-        ) from last_error
-
-    @staticmethod
-    def _parse_response(
-        payload: dict[str, Any],
-        *,
-        model: str,
-    ) -> ProviderCompletion:
-        choices = payload.get("choices") or []
-        if not choices:
-            raise AIProviderError("AI provider returned no completion")
-        content = choices[0].get("message", {}).get("content")
-        if not isinstance(content, str):
+        text_output = response.text
+        if not isinstance(text_output, str) or not text_output:
             raise AIProviderError("AI provider returned an invalid completion")
 
-        usage = payload.get("usage") or {}
-        prompt_tokens = int(usage.get("prompt_tokens", 0))
-        completion_tokens = int(usage.get("completion_tokens", 0))
-        total_tokens = int(
-            usage.get("total_tokens", prompt_tokens + completion_tokens)
+        usage = response.usage_metadata
+        prompt_tokens = int(usage.prompt_token_count or 0) if usage else 0
+        completion_tokens = int(usage.candidates_token_count or 0) if usage else 0
+        total_tokens = (
+            int(usage.total_token_count)
+            if usage and usage.total_token_count is not None
+            else prompt_tokens + completion_tokens
         )
         return ProviderCompletion(
-            content=content,
-            model=str(payload.get("model") or model),
+            content=text_output,
+            model=str(response.model_version or model_name),
             usage=ProviderUsage(
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
@@ -160,18 +160,38 @@ class OpenAIAdapter(BaseAIProvider):
             ),
         )
 
+    def _redact_api_key(self, detail: str) -> str:
+        if self._api_key:
+            return detail.replace(self._api_key, "[redacted]")
+        return detail
+
+    @staticmethod
+    def _format_prompt(messages: Sequence[dict[str, str]]) -> str:
+        system_messages = [
+            message["content"]
+            for message in messages
+            if message.get("role") == "system"
+        ]
+        conversation = [
+            f"{'Tutor' if message.get('role') == 'assistant' else 'Student'}: "
+            f"{message['content']}"
+            for message in messages
+            if message.get("role") != "system"
+        ]
+
+        prompt_sections = []
+        if system_messages:
+            prompt_sections.append("Instructions:\n" + "\n\n".join(system_messages))
+        if conversation:
+            prompt_sections.append("Conversation:\n" + "\n".join(conversation))
+        return "\n\n".join(prompt_sections)
 
 class AIGateway:
-    MODEL_PRICING_PER_MILLION_TOKENS = {
-        "gpt-4o": (5.0, 15.0),
-        "gpt-4o-mini": (0.15, 0.60),
-    }
-
     def __init__(
         self,
         providers: dict[str, BaseAIProvider] | None = None,
     ) -> None:
-        self.providers = providers or {"openai": OpenAIAdapter()}
+        self.providers = providers or {"gemini": GeminiAdapter()}
 
     def complete(
         self,
@@ -216,17 +236,7 @@ class AIGateway:
         model: str,
         usage: ProviderUsage,
     ) -> float:
-        if provider != "openai":
-            return 0.0
-        prompt_price, completion_price = cls.MODEL_PRICING_PER_MILLION_TOKENS.get(
-            model,
-            (0.0, 0.0),
-        )
-        return round(
-            (usage.prompt_tokens / 1_000_000 * prompt_price)
-            + (usage.completion_tokens / 1_000_000 * completion_price),
-            8,
-        )
+        return 0.0
 
 
 gateway = AIGateway()

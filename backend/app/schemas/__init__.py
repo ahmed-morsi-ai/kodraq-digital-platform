@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from app.schemas.assignment import (
     AssignmentBase,
@@ -17,13 +17,12 @@ from app.schemas.enrollment import (
     StudentProgressUpdate,
 )
 from app.schemas.graduation import (
-    GraduationEvaluationResponse,
-    GraduationGateCheckResponse,
+    GraduationEligibilityResponse,
+    GraduationGateResponse,
 )
-from app.schemas.project_submission import (
+from app.schemas.final_project import (
     ProjectReviewCreate,
     ProjectReviewResponse,
-    ProjectSubmissionBase,
     ProjectSubmissionCreate,
     ProjectSubmissionResponse,
     ProjectSubmissionUpdate,
@@ -56,7 +55,6 @@ from app.schemas.submission import (
     SubmissionCreate,
     SubmissionDetailResponse,
     SubmissionResponse,
-    SubmissionReview,
     SubmissionReviewCreate,
     SubmissionReviewResponse,
     SubmissionUpdate,
@@ -88,7 +86,6 @@ __all__ = [
     "SubmissionBase",
     "SubmissionCreate",
     "SubmissionUpdate",
-    "SubmissionReview",
     "SubmissionReviewCreate",
     "SubmissionReviewResponse",
     "SubmissionResponse",
@@ -111,7 +108,6 @@ __all__ = [
     "QuizAnswerResponse",
     "QuizAttemptSubmit",
     "QuizAttemptResponse",
-    "ProjectSubmissionBase",
     "ProjectSubmissionCreate",
     "ProjectSubmissionUpdate",
     "ProjectReviewCreate",
@@ -146,6 +142,6 @@ __all__ = [
     "StudentProgressCreate",
     "StudentProgressUpdate",
     "StudentProgressDetail",
-    "GraduationGateCheckResponse",
-    "GraduationEvaluationResponse",
+    "GraduationGateResponse",
+    "GraduationEligibilityResponse",
 ]

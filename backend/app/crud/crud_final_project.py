@@ -1,111 +1,112 @@
-﻿from __future__ import annotations
-
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.final_project import ProjectRequirement, TrainingProject
-from app.schemas.final_project import (
-    TrainingProjectCreate,
-    TrainingProjectUpdate,
+from app.models.track import Track
+from app.models.user import User
+from app.schemas.final_project import TrainingProjectCreate, TrainingProjectUpdate
+from app.services.final_project_access import (
+    ProjectConflictError,
+    commit,
+    require_manager,
+    require_project_read,
+    require_track_read,
 )
 
 
-def _project_query(project_id: int):
-    return (
+def get_project(db: Session, project_id: int, *, lock=False) -> TrainingProject:
+    """Internal retrieval; public CRUD operations authorize the actor."""
+    stmt = (
         select(TrainingProject)
         .options(selectinload(TrainingProject.requirements))
         .where(TrainingProject.id == project_id)
     )
+    if lock:
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+    project = db.scalar(stmt)
+    if project is None:
+        raise LookupError("Training project not found")
+    return project
 
 
 class CRUDTrainingProject:
-    def get(
-        self,
-        db: Session,
-        *,
-        project_id: int,
-    ) -> TrainingProject | None:
-        return db.execute(
-            _project_query(project_id)
-        ).scalar_one_or_none()
+    def get(self, db: Session, *, project_id: int, actor: User) -> TrainingProject:
+        project = get_project(db, project_id)
+        require_project_read(db, actor, project)
+        return project
 
     def get_by_track(
-        self,
-        db: Session,
-        *,
-        track_id: int,
-    ) -> TrainingProject | None:
-        stmt = (
+        self, db: Session, *, track_id: int, actor: User
+    ) -> TrainingProject:
+        if db.get(Track, track_id) is None:
+            raise LookupError("Track not found")
+        require_track_read(db, actor, track_id)
+        project = db.scalar(
             select(TrainingProject)
             .options(selectinload(TrainingProject.requirements))
             .where(TrainingProject.track_id == track_id)
         )
-        return db.execute(stmt).scalar_one_or_none()
+        if project is None:
+            raise LookupError("Final project not found")
+        require_project_read(db, actor, project)
+        return project
 
     def create(
-        self,
-        db: Session,
-        *,
-        track_id: int,
-        obj_in: TrainingProjectCreate,
+        self, db: Session, *, track_id: int, obj_in: TrainingProjectCreate, actor: User
     ) -> TrainingProject:
-        data = obj_in.model_dump()
-        requirements = data.pop("requirements", [])
-
-        db_obj = TrainingProject(
+        require_manager(db, actor, track_id)
+        # Lock the track so concurrent creates return one success and one conflict.
+        if (
+            db.scalar(select(Track).where(Track.id == track_id).with_for_update())
+            is None
+        ):
+            raise LookupError("Track not found")
+        if (
+            db.scalar(
+                select(TrainingProject.id).where(TrainingProject.track_id == track_id)
+            )
+            is not None
+        ):
+            raise ProjectConflictError("A final project already exists for this track.")
+        data = TrainingProjectCreate.model_validate(obj_in.model_dump()).model_dump()
+        requirements = data.pop("requirements")
+        project = TrainingProject(
             track_id=track_id,
             **data,
+            requirements=[ProjectRequirement(**item) for item in requirements],
         )
-        db_obj.requirements = [
-            ProjectRequirement(**requirement)
-            for requirement in requirements
-        ]
-
-        db.add(db_obj)
-
-        try:
-            db.commit()
-        except IntegrityError as error:
-            db.rollback()
-            raise ValueError(
-                "A final project already exists for this track."
-            ) from error
-
-        return self.get(db, project_id=db_obj.id)  # type: ignore[return-value]
+        db.add(project)
+        return commit(db, project)
 
     def update(
         self,
         db: Session,
         *,
-        db_obj: TrainingProject,
+        project_id: int,
         obj_in: TrainingProjectUpdate,
+        actor: User,
     ) -> TrainingProject:
-        data = obj_in.model_dump(exclude_unset=True)
+        project = get_project(db, project_id, lock=True)
+        require_manager(db, actor, project.track_id)
+        data = TrainingProjectUpdate.model_validate(
+            obj_in.model_dump(exclude_unset=True)
+        ).model_dump(exclude_unset=True)
         requirements = data.pop("requirements", None)
-
         for field, value in data.items():
-            setattr(db_obj, field, value)
-
+            setattr(project, field, value)
         if requirements is not None:
-            db_obj.requirements = [
-                ProjectRequirement(**requirement)
-                for requirement in requirements
-            ]
+            project.requirements = [ProjectRequirement(**item) for item in requirements]
+        return commit(db, project)
 
-        db.add(db_obj)
-        db.commit()
-
-        return self.get(db, project_id=db_obj.id)  # type: ignore[return-value]
-
-    def remove(
-        self,
-        db: Session,
-        *,
-        db_obj: TrainingProject,
-    ) -> None:
-        db.delete(db_obj)
-        db.commit()
+    def remove(self, db: Session, *, project_id: int, actor: User) -> None:
+        project = get_project(db, project_id, lock=True)
+        require_manager(db, actor, project.track_id)
+        db.delete(project)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
 
 
 training_project = CRUDTrainingProject()

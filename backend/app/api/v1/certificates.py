@@ -16,6 +16,7 @@ from app.services.graduation import (
     get_certificate,
     issue_certificate,
     list_student_certificates,
+    require_read,
 )
 
 router = APIRouter(prefix="/certificates", tags=["certificates"])
@@ -32,13 +33,6 @@ CurrentStaffDep = Annotated[
 
 class CertificateIssueRequest(BaseModel):
     file_url: str | None = None
-
-
-def _is_admin_or_superuser(user: UserModel) -> bool:
-    if user.is_superuser:
-        return True
-    role_name = user.role_rel.name.casefold() if user.role_rel else ""
-    return role_name in {"admin", "instructor"}
 
 
 def _serialize(certificate: Certificate) -> dict:
@@ -86,13 +80,12 @@ def read_certificate(
             detail="Certificate not found.",
         )
 
-    if certificate.student_id != current_user.id and not _is_admin_or_superuser(
-        current_user
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not allowed to view this certificate.",
+    try:
+        require_read(
+            session, current_user, certificate.student_id, certificate.track_id
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     return _serialize(certificate)
 
@@ -107,18 +100,15 @@ def issue_graduation_certificate(
     session: SessionDep,
     current_user: CurrentStaffDep,
 ) -> dict:
-    if not _is_admin_or_superuser(current_user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admin or instructor users can issue certificates.",
-        )
-
     try:
         certificate = issue_certificate(
             session,
             graduation_result_id=graduation_result_id,
+            actor=current_user,
             file_url=payload.file_url,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

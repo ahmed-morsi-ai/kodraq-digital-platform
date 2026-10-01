@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, JSON, Numeric, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base, TimestampMixin
@@ -19,7 +19,6 @@ class Track(Base, TimestampMixin):
     is_premium = Column(Boolean, default=False, nullable=False)
 
     # TASK-7.1.1 monetization
-
 
     payments = relationship(
         "Payment",
@@ -56,21 +55,21 @@ class Track(Base, TimestampMixin):
         back_populates="track",
         cascade="all, delete-orphan",
     )
-    graduation_evaluations = relationship(
-        "GraduationEvaluation",
+    graduation_results = relationship(
+        "GraduationResult",
         back_populates="track",
         cascade="all, delete-orphan",
     )
-    knowledge_documents = relationship(
-        "KnowledgeDocument",
+    graduation_rules = relationship(
+        "GraduationRule",
         back_populates="track",
         cascade="all, delete-orphan",
     )
-    knowledge_chunks = relationship(
-        "KnowledgeChunk",
+    documents = relationship(
+        "Document",
         back_populates="track",
         cascade="all, delete-orphan",
-        overlaps="document,chunks",
+        passive_deletes=True,
     )
 
 
@@ -102,6 +101,8 @@ class TrackModule(Base, TimestampMixin):
         cascade="all, delete-orphan",
     )
     assignments = relationship("Assignment", back_populates="module")
+    questions = relationship("Question", back_populates="module")
+    quizzes = relationship("Quiz", back_populates="module")
 
 
 class Lesson(Base, TimestampMixin):
@@ -115,8 +116,10 @@ class Lesson(Base, TimestampMixin):
         index=True,
     )
     title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
     content = Column(Text, nullable=True)
     video_url = Column(String(512), nullable=True)
+    quiz_data = Column(JSON, nullable=True)
     ordering = Column(Integer, default=0, nullable=False)
     # TASK-7.1.1 monetization
 
@@ -129,6 +132,12 @@ class Lesson(Base, TimestampMixin):
     assignments = relationship("Assignment", back_populates="lesson")
     questions = relationship("Question", back_populates="lesson")
     quizzes = relationship("Quiz", back_populates="lesson")
+    documents = relationship(
+        "Document",
+        back_populates="lesson",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class Resource(Base, TimestampMixin):

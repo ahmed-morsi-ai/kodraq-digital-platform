@@ -1,8 +1,16 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path, PurePosixPath
 from typing import BinaryIO
+
+from app.core.config import settings
+
+
+class FileTooLargeError(ValueError):
+    """An upload exceeds the configured per-file limit."""
 
 
 @dataclass(frozen=True)
@@ -13,55 +21,74 @@ class StoredObject:
 
 
 class StorageService(ABC):
-    """Storage abstraction used by the business/API layer."""
+    """Private object storage contract, suitable for local storage or an R2 adapter.
+
+    Implementations enforce upload limits and remove partial uploads on failure.
+    API code uses object keys and streams, never provider-specific file paths.
+    """
 
     @abstractmethod
     def upload_file(
-        self,
-        *,
-        file: BinaryIO,
-        object_key: str,
-        content_type: str | None = None,
-    ) -> StoredObject:
-        """Persist a file and return metadata about the stored object."""
+        self, *, file: BinaryIO, object_key: str, content_type: str | None = None
+    ) -> StoredObject: ...
 
     @abstractmethod
-    def delete_file(self, *, object_key: str) -> None:
-        """Delete a stored object by its storage key."""
+    def open_file(self, *, object_key: str) -> BinaryIO:
+        """Return a readable binary stream; the caller closes it."""
+
+    @abstractmethod
+    def delete_file(self, *, object_key: str) -> None: ...
 
 
-class MockStorageService(StorageService):
-    """In-memory storage used for local development and tests."""
+class LocalStorageService(StorageService):
+    def __init__(self, root: Path, *, max_file_bytes: int = 10 * 1024 * 1024):
+        self.root = root.resolve()
+        self.max_file_bytes = max_file_bytes
 
-    def __init__(self) -> None:
-        self.objects: dict[str, StoredObject] = {}
+    def _path(self, object_key: str) -> Path:
+        key = PurePosixPath(object_key)
+        if (
+            not object_key
+            or key.is_absolute()
+            or any(part in {".", "..", ""} for part in object_key.split("/"))
+            or any(char in object_key for char in "\\:\x00")
+        ):
+            raise ValueError("Invalid storage key")
+        path = (self.root / key).resolve()
+        if not path.is_relative_to(self.root):
+            raise ValueError("Storage key escapes the storage root")
+        return path
 
     def upload_file(
-        self,
-        *,
-        file: BinaryIO,
-        object_key: str,
-        content_type: str | None = None,
+        self, *, file: BinaryIO, object_key: str, content_type: str | None = None
     ) -> StoredObject:
-        file.seek(0)
-        data = file.read()
-        if not isinstance(data, bytes):
-            data = bytes(data)
+        path = self._path(object_key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        destination = path.open("xb")
+        size = 0
+        try:
+            with destination:
+                file.seek(0)
+                while chunk := file.read(64 * 1024):
+                    size += len(chunk)
+                    if size > self.max_file_bytes:
+                        raise FileTooLargeError("File exceeds the upload size limit")
+                    destination.write(chunk)
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+        return StoredObject(object_key, size, content_type)
 
-        stored = StoredObject(
-            object_key=object_key,
-            size_bytes=len(data),
-            content_type=content_type,
-        )
-        self.objects[object_key] = stored
-        return stored
+    def open_file(self, *, object_key: str) -> BinaryIO:
+        return self._path(object_key).open("rb")
 
     def delete_file(self, *, object_key: str) -> None:
-        self.objects.pop(object_key, None)
+        self._path(object_key).unlink(missing_ok=True)
 
 
-_default_storage_service = MockStorageService()
-
-
+@lru_cache(maxsize=1)
 def get_storage_service() -> StorageService:
-    return _default_storage_service
+    return LocalStorageService(
+        settings.STORAGE_LOCAL_ROOT,
+        max_file_bytes=settings.SUBMISSION_MAX_FILE_BYTES,
+    )

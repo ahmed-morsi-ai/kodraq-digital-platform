@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.crud.base import CRUDBase
 from app.models.enrollment import Enrollment, StudentProgress
-from app.models.track import Track
 from app.schemas.enrollment import (
     EnrollmentCreate,
     EnrollmentUpdate,
@@ -73,17 +72,10 @@ class CRUDEnrollment(CRUDBase[Enrollment, EnrollmentCreate, EnrollmentUpdate]):
         user_id: int,
         obj_in: EnrollmentCreate,
     ) -> Enrollment:
-        track = db.get(Track, obj_in.track_id)
-        enrollment_status = (
-            "pending_payment"
-            if track is not None and track.is_premium
-            else obj_in.status
-        )
-
         db_obj = Enrollment(
             user_id=user_id,
             track_id=obj_in.track_id,
-            status=enrollment_status,
+            status=obj_in.status,
         )
         db.add(db_obj)
         db.commit()

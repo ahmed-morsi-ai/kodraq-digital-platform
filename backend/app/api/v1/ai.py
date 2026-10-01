@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -19,6 +20,7 @@ from app.services.ai_gateway import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 CurrentUserDep = Annotated[
     User,
@@ -52,20 +54,26 @@ def create_completion(
             max_tokens=request.max_tokens,
         )
     except AIProviderError as error:
+        logger.error(
+            "AI provider failure for user_id=%s request_type=%s: %s",
+            current_user.id,
+            request.request_type,
+            error.detail,
+        )
         session.add(
             AIRequestLog(
                 user_id=current_user.id,
-                provider=request.provider or "openai",
+                provider=request.provider or "gemini",
                 model=request.model or "unknown",
                 request_type=request.request_type,
                 success=False,
-                error_message=str(error),
+                error_message=error.detail,
             )
         )
         session.commit()
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="AI provider request failed",
+            status_code=error.status_code,
+            detail=error.detail,
         ) from None
 
     session.add(

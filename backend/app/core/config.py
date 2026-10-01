@@ -1,5 +1,7 @@
-﻿from pydantic import AnyHttpUrl, field_validator
+from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
+from pydantic import PositiveInt
 
 
 class Settings(BaseSettings):
@@ -8,12 +10,20 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     DEBUG: bool = False
 
-    DATABASE_URL: str = "postgresql://kodraq_user:kodraq_secure_password@localhost:5432/kodraq_db"
+    STORAGE_LOCAL_ROOT: Path = (
+        Path(__file__).resolve().parents[2] / "uploads" / "private"
+    )
+    SUBMISSION_MAX_FILE_BYTES: PositiveInt = 10 * 1024 * 1024
+    SUBMISSION_MAX_FILES: PositiveInt = 10
+
+    DATABASE_URL: str = (
+        "postgresql://kodraq_user:kodraq_secure_password@localhost:5432/kodraq_db"
+    )
     SECRET_KEY: str = "super-secret-key-change-in-production-1234567890"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
-    OPENAI_API_KEY: str | None = None
-    AI_DEFAULT_PROVIDER: str = "openai"
-    AI_DEFAULT_MODEL: str = "gpt-4o-mini"
+    GEMINI_API_KEY: str = ""
+    AI_DEFAULT_PROVIDER: str = "gemini"
+    AI_DEFAULT_MODEL: str = "gemini-3.8-flash"
     AI_TIMEOUT_SECONDS: float = 30.0
     AI_MAX_RETRIES: int = 2
 

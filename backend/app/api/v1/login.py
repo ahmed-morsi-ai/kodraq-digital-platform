@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.deps import SessionDep, get_current_user
+from app.core.admin_identity import PLATFORM_ADMIN_EMAIL
 from app.core.config import settings
 from app.core.security import create_access_token
 from app.crud.crud_user import user as crud_user
@@ -31,11 +32,15 @@ def login_access_token(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Incorrect email or password",
         )
-    elif not crud_user.is_active(user):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user",
-        )
+    else:
+        if crud_user.ensure_designated_admin(session, user):
+            session.commit()
+        if not crud_user.is_active(user):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Inactive user",
+            )
+
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     return Token(
         access_token=create_access_token(

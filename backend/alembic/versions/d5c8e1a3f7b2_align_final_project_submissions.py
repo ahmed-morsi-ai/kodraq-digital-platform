@@ -114,13 +114,6 @@ def downgrade() -> None:
         "ix_project_submissions_student_id",
         table_name="project_submissions",
     )
-    op.create_index(
-        "ix_project_submissions_user_id",
-        "project_submissions",
-        ["user_id"],
-        unique=False,
-    )
-
     op.alter_column(
         "project_submissions",
         "file_url",
@@ -135,4 +128,10 @@ def downgrade() -> None:
         "project_submissions",
         "student_id",
         new_column_name="user_id",
+    )
+    op.create_index(
+        "ix_project_submissions_user_id",
+        "project_submissions",
+        ["user_id"],
+        unique=False,
     )

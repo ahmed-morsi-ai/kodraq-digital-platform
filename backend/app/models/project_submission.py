@@ -1,4 +1,4 @@
-﻿from enum import Enum
+from enum import Enum
 
 from sqlalchemy import (
     CheckConstraint,
@@ -59,6 +59,7 @@ class ProjectSubmission(Base, TimestampMixin):
     status = Column(
         String(32),
         default=ProjectSubmissionStatus.DRAFT.value,
+        server_default=ProjectSubmissionStatus.DRAFT.value,
         nullable=False,
         index=True,
     )
@@ -76,5 +77,5 @@ class ProjectSubmission(Base, TimestampMixin):
         "ProjectReview",
         back_populates="submission",
         cascade="all, delete-orphan",
-        order_by="ProjectReview.created_at",
+        order_by="(ProjectReview.created_at, ProjectReview.id)",
     )

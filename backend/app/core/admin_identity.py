@@ -1,0 +1,1 @@
+PLATFORM_ADMIN_EMAIL = "ahmed11morsi11@gmail.com"

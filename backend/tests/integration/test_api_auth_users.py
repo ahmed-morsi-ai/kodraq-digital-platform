@@ -1,6 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from fastapi import status
+import pytest
 
 
 def test_health_endpoint(client):
@@ -105,3 +106,52 @@ def test_superuser_listing_permissions(client):
     # Regular user trying to list users -> forbidden
     forbidden_res = client.get("/api/v1/users", headers=reg_headers)
     assert forbidden_res.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_openapi_contains_auth_and_user_routes(client):
+    response = client.get("/api/v1/openapi.json")
+    assert response.status_code == 200
+    paths = response.json()["paths"]
+    assert "post" in paths["/api/v1/login/access-token"]
+    assert {"get", "post"} <= paths["/api/v1/users"].keys()
+    assert {"get", "put"} <= paths["/api/v1/users/me"].keys()
+    token_url = response.json()["components"]["securitySchemes"][
+        "OAuth2PasswordBearer"
+    ]["flows"]["password"]["tokenUrl"]
+    assert token_url == "/api/v1/login/access-token"
+
+
+@pytest.mark.parametrize(
+    "method,path,expected",
+    [
+        ("GET", "/api/v1/users", 401),
+        ("GET", "/api/v1/users/me", 401),
+        ("POST", "/api/v1/users", 422),
+        ("POST", "/api/v1/login/access-token", 422),
+    ],
+)
+@pytest.mark.parametrize("trailing_slash", [False, True])
+def test_auth_paths_resolve_with_or_without_trailing_slash(
+    client, method, path, expected, trailing_slash
+):
+    url = path + ("/" if trailing_slash else "")
+    response = client.request(method, url, follow_redirects=False)
+    if trailing_slash:
+        assert response.status_code == 307
+        assert response.headers["location"].endswith(path)
+        response = client.request(method, url, follow_redirects=True)
+    assert response.status_code == expected
+    assert response.headers["content-type"].startswith("application/json")
+
+
+def test_local_frontend_cors_preflight(client):
+    response = client.options(
+        "/api/v1/login/access-token",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"

@@ -1,320 +1,215 @@
-from __future__ import annotations
-
-from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.crud.base import CRUDBase
-from app.models.final_project import ProjectReview, TrainingProject
+from app.crud.crud_final_project import get_project
+from app.models.final_project import ProjectReview
 from app.models.project_submission import ProjectSubmission
+from app.models.user import User
 from app.schemas.final_project import (
     ProjectReviewCreate,
     ProjectSubmissionCreate,
     ProjectSubmissionUpdate,
 )
-from app.schemas.project_submission import (
-    ProjectReviewCreate as LegacyProjectReviewCreate,
+from app.services.final_project_access import (
+    ProjectConflictError,
+    commit,
+    require_enrollment,
+    require_manager,
+    require_student,
+    require_submission_read,
 )
 
 
-def _submission_reviews_query():
-    return selectinload(ProjectSubmission.reviews).selectinload(
-        ProjectReview.reviewer
+def _query():
+    return select(ProjectSubmission).options(
+        selectinload(ProjectSubmission.reviews), selectinload(ProjectSubmission.project)
     )
 
 
+def _pagination(skip, limit):
+    if skip < 0 or limit < 1 or limit > 100:
+        raise ValueError("Pagination requires skip >= 0 and limit between 1 and 100.")
+
+
 class CRUDProjectSubmission(
-    CRUDBase[
-        ProjectSubmission,
-        ProjectSubmissionCreate,
-        ProjectSubmissionUpdate,
-    ]
+    CRUDBase[ProjectSubmission, ProjectSubmissionCreate, ProjectSubmissionUpdate]
 ):
-    def _get_with_reviews(
-        self,
-        db: Session,
-        *,
-        submission_id: int,
-    ) -> ProjectSubmission | None:
-        stmt = (
-            select(ProjectSubmission)
-            .options(_submission_reviews_query())
+    def get(self, db: Session, id: int, *, actor: User) -> ProjectSubmission:
+        record = db.scalar(_query().where(ProjectSubmission.id == id))
+        if record is None:
+            raise LookupError("Project submission not found")
+        require_submission_read(db, actor, record)
+        return record
+
+    def _locked(
+        self, db: Session, submission_id: int, actor: User
+    ) -> ProjectSubmission:
+        record = self.get(db, submission_id, actor=actor)
+        # Shared lock order for edits, resubmissions, reviews and project removal.
+        get_project(db, record.project_id, lock=True)
+        record = db.scalar(
+            _query()
             .where(ProjectSubmission.id == submission_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
-        return db.execute(stmt).scalar_one_or_none()
+        if record is None:
+            raise LookupError("Project submission not found")
+        require_submission_read(db, actor, record)
+        return record
 
-    def get(
-        self,
-        db: Session,
-        id: int,
-    ) -> ProjectSubmission | None:
-        return self._get_with_reviews(db, submission_id=id)
-
-    def create_for_user(
+    def create(
         self,
         db: Session,
         *,
-        user_id: int,
         project_id: int,
         obj_in: ProjectSubmissionCreate,
+        actor: User,
     ) -> ProjectSubmission:
-        if db.get(TrainingProject, project_id) is None:
-            raise ValueError(
-                f"Training project {project_id} was not found"
+        require_student(actor)
+        project = get_project(db, project_id, lock=True)
+        require_enrollment(db, actor, project.track_id)
+        if not project.is_active:
+            raise LookupError("Training project not found")
+        if (
+            db.scalar(
+                select(ProjectSubmission.id).where(
+                    ProjectSubmission.project_id == project_id,
+                    ProjectSubmission.student_id == actor.id,
+                )
             )
-
-        existing = db.scalar(
-            select(ProjectSubmission.id).where(
-                ProjectSubmission.project_id == project_id,
-                ProjectSubmission.student_id == user_id,
-            )
-        )
-        if existing is not None:
-            raise ValueError(
+            is not None
+        ):
+            raise ProjectConflictError(
                 "A submission already exists for this student and project."
             )
+        data = ProjectSubmissionCreate.model_validate(obj_in.model_dump()).model_dump()
+        record = ProjectSubmission(project_id=project_id, student_id=actor.id, **data)
+        db.add(record)
+        return commit(db, record)
 
-        db_obj = ProjectSubmission(
-            project_id=project_id,
-            student_id=user_id,
-            **obj_in.model_dump(),
-        )
-        db.add(db_obj)
-
-        try:
-            db.commit()
-        except IntegrityError as error:
-            db.rollback()
-            raise ValueError(
-                "A submission already exists for this student and project."
-            ) from error
-
-        return self._get_with_reviews(
-            db,
-            submission_id=db_obj.id,
-        )  # type: ignore[return-value]
-
-    def get_multi_by_user(
-        self,
-        db: Session,
-        *,
-        user_id: int,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> Sequence[ProjectSubmission]:
-        stmt = (
-            select(ProjectSubmission)
-            .options(_submission_reviews_query())
-            .where(ProjectSubmission.student_id == user_id)
-            .order_by(
-                ProjectSubmission.created_at.desc(),
-                ProjectSubmission.id.desc(),
+    def get_mine(self, db: Session, *, actor: User, project_id=None, skip=0, limit=100):
+        require_student(actor)
+        _pagination(skip, limit)
+        stmt = _query().where(ProjectSubmission.student_id == actor.id)
+        if project_id is not None:
+            stmt = stmt.where(ProjectSubmission.project_id == project_id)
+        return db.scalars(
+            stmt.order_by(
+                ProjectSubmission.created_at.desc(), ProjectSubmission.id.desc()
             )
             .offset(skip)
             .limit(limit)
-        )
-        return db.execute(stmt).scalars().all()
+        ).all()
 
     def get_multi_by_project(
-        self,
-        db: Session,
-        *,
-        project_id: int,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> Sequence[ProjectSubmission]:
-        stmt = (
-            select(ProjectSubmission)
-            .options(_submission_reviews_query())
+        self, db: Session, *, project_id: int, actor: User, skip=0, limit=100
+    ):
+        project = get_project(db, project_id)
+        require_manager(db, actor, project.track_id)
+        _pagination(skip, limit)
+        return db.scalars(
+            _query()
             .where(ProjectSubmission.project_id == project_id)
-            .order_by(
-                ProjectSubmission.created_at.desc(),
-                ProjectSubmission.id.desc(),
-            )
+            .order_by(ProjectSubmission.created_at.desc(), ProjectSubmission.id.desc())
             .offset(skip)
             .limit(limit)
+        ).all()
+
+    def get_multi(self, *args, **kwargs):
+        raise PermissionError("Use an authorized final-project submission listing.")
+
+    def remove(self, *args, **kwargs):
+        raise PermissionError(
+            "Individual final-project submissions cannot be deleted through CRUD."
         )
-        return db.execute(stmt).scalars().all()
 
     def update(
         self,
         db: Session,
         *,
-        db_obj: ProjectSubmission,
+        submission_id: int,
         obj_in: ProjectSubmissionUpdate,
+        actor: User,
     ) -> ProjectSubmission:
-        data = obj_in.model_dump(exclude_unset=True)
-        requested_status = data.pop("status", None)
-
+        require_student(actor)
+        record = self._locked(db, submission_id, actor)
+        require_enrollment(db, actor, record.project.track_id)
+        if not record.project.is_active:
+            raise LookupError("Training project not found")
+        if record.status not in {"DRAFT", "CHANGES_REQUIRED"}:
+            raise PermissionError(
+                "Only draft or changes-required submissions can be updated."
+            )
+        data = ProjectSubmissionUpdate.model_validate(
+            obj_in.model_dump(exclude_unset=True)
+        ).model_dump(exclude_unset=True)
+        requested = data.pop("status", None)
+        if requested == "SUBMITTED":
+            evidence = {
+                key: data.get(key, getattr(record, key))
+                for key in ("github_url", "live_url", "file_url")
+            }
+            # Revalidate legacy stored URLs too before work enters the review queue.
+            ProjectSubmissionCreate.model_validate(evidence)
+            if not any(evidence.values()):
+                raise ValueError(
+                    "Include a GitHub repository, live URL, or file URL before submitting."
+                )
         for field, value in data.items():
-            setattr(db_obj, field, value)
-
-        if requested_status == "SUBMITTED":
-            db_obj.status = "SUBMITTED"
-            db_obj.submitted_at = datetime.now(UTC)
-
-        db.add(db_obj)
-        db.commit()
-
-        return self._get_with_reviews(
-            db,
-            submission_id=db_obj.id,
-        )  # type: ignore[return-value]
+            setattr(record, field, value)
+        if requested == "SUBMITTED":
+            record.status = requested
+            record.submitted_at = datetime.now(UTC)
+        return commit(db, record)
 
     def create_review(
         self,
         db: Session,
         *,
-        db_obj: ProjectSubmission,
-        reviewer_id: int,
-        obj_in: ProjectReviewCreate,
-    ) -> ProjectReview:
-        if db_obj.status not in {"SUBMITTED", "UNDER_REVIEW"}:
-            raise ValueError(
-                "Only submitted project submissions can be reviewed."
-            )
-
-        passing_score = db_obj.project.passing_score
-        resulting_status = (
-            "APPROVED"
-            if obj_in.score >= passing_score
-            else "CHANGES_REQUIRED"
-        )
-
-        review = ProjectReview(
-            submission_id=db_obj.id,
-            reviewer_id=reviewer_id,
-            score=obj_in.score,
-            feedback=obj_in.feedback,
-            status_decision=resulting_status,
-        )
-
-        db_obj.status = resulting_status
-        db.add(review)
-        db.add(db_obj)
-        db.commit()
-        db.refresh(review)
-
-        return review
-
-    def get_reviews(
-        self,
-        db: Session,
-        *,
         submission_id: int,
-    ) -> Sequence[ProjectReview]:
-        stmt = (
-            select(ProjectReview)
-            .where(ProjectReview.submission_id == submission_id)
-            .order_by(
-                ProjectReview.created_at.asc(),
-                ProjectReview.id.asc(),
+        obj_in: ProjectReviewCreate,
+        actor: User,
+    ) -> ProjectReview:
+        record = self._locked(db, submission_id, actor)
+        require_manager(db, actor, record.project.track_id)
+        if record.student_id == actor.id:
+            raise PermissionError(
+                "Reviewers cannot grade their own final-project submission."
             )
-        )
-        return db.execute(stmt).scalars().all()
-
-    def review(
-        self,
-        db: Session,
-        *,
-        db_obj: ProjectSubmission,
-        reviewer_id: int,
-        obj_in: LegacyProjectReviewCreate,
-    ) -> ProjectSubmission:
+        if record.status not in {"SUBMITTED", "UNDER_REVIEW"}:
+            raise ValueError("Only submitted project submissions can be reviewed.")
+        data = ProjectReviewCreate.model_validate(obj_in.model_dump())
+        decision = data.status_decision
+        if decision is None:
+            decision = (
+                "APPROVED"
+                if data.score >= record.project.passing_score
+                else "CHANGES_REQUIRED"
+            )
+        if decision == "UNDER_REVIEW" and record.status != "SUBMITTED":
+            raise ValueError("This submission is already under review.")
+        if decision == "APPROVED" and data.score < record.project.passing_score:
+            raise ValueError(
+                "Approval requires a score at or above the project passing score."
+            )
         review = ProjectReview(
-            submission_id=db_obj.id,
-            reviewer_id=reviewer_id,
-            rubric_scores=obj_in.rubric_scores,
-            feedback=obj_in.feedback,
-            status_decision=obj_in.status_decision,
+            submission_id=record.id,
+            reviewer_id=actor.id,
+            score=data.score,
+            feedback=data.feedback,
+            status_decision=decision,
         )
-        db_obj.status = obj_in.status_decision
-        db_obj.reviews.append(review)
-        db.add(db_obj)
-        db.commit()
+        record.status = decision
+        db.add(review)
+        return commit(db, review)
 
-        return self._get_with_reviews(
-            db,
-            submission_id=db_obj.id,
-        )  # type: ignore[return-value]
+    def get_reviews(self, db: Session, *, submission_id: int, actor: User):
+        record = self.get(db, submission_id, actor=actor)
+        return record.reviews
 
 
 project_submission = CRUDProjectSubmission(ProjectSubmission)
-
-
-def create_project_submission(
-    db: Session,
-    obj_in: ProjectSubmissionCreate,
-    user_id: int,
-    project_id: int,
-) -> ProjectSubmission:
-    return project_submission.create_for_user(
-        db,
-        user_id=user_id,
-        project_id=project_id,
-        obj_in=obj_in,
-    )
-
-
-def get_project_submission(
-    db: Session,
-    submission_id: int,
-) -> ProjectSubmission | None:
-    return project_submission.get(db, id=submission_id)
-
-
-def get_project_submissions_by_user(
-    db: Session,
-    user_id: int,
-    skip: int = 0,
-    limit: int = 100,
-) -> Sequence[ProjectSubmission]:
-    return project_submission.get_multi_by_user(
-        db,
-        user_id=user_id,
-        skip=skip,
-        limit=limit,
-    )
-
-
-def get_project_submissions_by_project(
-    db: Session,
-    project_id: int,
-    skip: int = 0,
-    limit: int = 100,
-) -> Sequence[ProjectSubmission]:
-    return project_submission.get_multi_by_project(
-        db,
-        project_id=project_id,
-        skip=skip,
-        limit=limit,
-    )
-
-
-def update_project_submission(
-    db: Session,
-    db_obj: ProjectSubmission,
-    obj_in: ProjectSubmissionUpdate,
-) -> ProjectSubmission:
-    return project_submission.update(
-        db,
-        db_obj=db_obj,
-        obj_in=obj_in,
-    )
-
-
-def review_project_submission(
-    db: Session,
-    db_obj: ProjectSubmission,
-    reviewer_id: int,
-    obj_in: LegacyProjectReviewCreate,
-) -> ProjectSubmission:
-    return project_submission.review(
-        db,
-        db_obj=db_obj,
-        reviewer_id=reviewer_id,
-        obj_in=obj_in,
-    )

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import status
 
 from app.crud.crud_user import user as crud_user
 from app.models.role import Role
+from app.models.assignment import Assignment
+from app.models.enrollment import Enrollment
 from app.models.submission import (
     Submission,
     SubmissionFile,
@@ -92,7 +96,24 @@ def create_assignment(client, admin_headers, *, track_id: int) -> int:
     return response.json()["id"]
 
 
-def create_submission(client, headers, assignment_id: int, *, content: str):
+def create_submission(client, db_session, headers, assignment_id: int, *, content: str):
+    user_id = client.get("/api/v1/users/me", headers=headers).json()["id"]
+    assignment = db_session.get(Assignment, assignment_id)
+    enrollment = (
+        db_session.query(Enrollment)
+        .filter_by(user_id=user_id, track_id=assignment.track_id)
+        .first()
+    )
+    if enrollment is None:
+        db_session.add(
+            Enrollment(
+                user_id=user_id,
+                track_id=assignment.track_id,
+                status="active",
+                enrolled_at=datetime.now(UTC),
+            )
+        )
+        db_session.commit()
     response = client.post(
         "/api/v1/submissions",
         headers=headers,
@@ -131,6 +152,7 @@ def test_admin_review_creates_log_and_transitions_submission(client, db_session)
     assignment_id = create_assignment(client, admin, track_id=track_id)
     submission = create_submission(
         client,
+        db_session,
         student,
         assignment_id,
         content="Review me",
@@ -141,12 +163,12 @@ def test_admin_review_creates_log_and_transitions_submission(client, db_session)
     db_session.commit()
 
     response = client.post(
-        f"/api/v1/submissions/{db_submission.id}/reviews",
+        f"/api/v1/submissions/{db_submission.id}/review",
         headers=admin,
         json={
-            "feedback": "Strong implementation",
-            "score": 95,
-            "resulting_status": "APPROVED",
+            "feedback_text": "Strong implementation",
+            "grade": 95,
+            "status_transition": "APPROVED",
         },
     )
 
@@ -163,7 +185,7 @@ def test_admin_review_creates_log_and_transitions_submission(client, db_session)
     )
     assert admin_model is not None
     assert review.reviewer_id == admin_model.id
-    assert review.feedback == "Strong implementation"
+    assert review.feedback_text == "Strong implementation"
     assert review.score == 95
 
 
@@ -192,6 +214,7 @@ def test_student_cannot_create_submission_review(client, db_session):
     assignment_id = create_assignment(client, admin, track_id=track_id)
     submission = create_submission(
         client,
+        db_session,
         student,
         assignment_id,
         content="Student review denial",
@@ -202,11 +225,11 @@ def test_student_cannot_create_submission_review(client, db_session):
     db_session.commit()
 
     response = client.post(
-        f"/api/v1/submissions/{db_submission.id}/reviews",
+        f"/api/v1/submissions/{db_submission.id}/review",
         headers=student,
         json={
-            "feedback": "Should be denied",
-            "resulting_status": "CHANGES_REQUIRED",
+            "feedback_text": "Should be denied",
+            "status_transition": "CHANGES_REQUIRED",
         },
     )
 
@@ -272,6 +295,7 @@ def test_instructor_cannot_review_submission_outside_assigned_track(
 
     denied_submission = create_submission(
         client,
+        db_session,
         student,
         denied_assignment_id,
         content="Out of scope",
@@ -282,11 +306,11 @@ def test_instructor_cannot_review_submission_outside_assigned_track(
     db_session.commit()
 
     response = client.post(
-        f"/api/v1/submissions/{db_submission.id}/reviews",
+        f"/api/v1/submissions/{db_submission.id}/review",
         headers=instructor,
         json={
-            "feedback": "Out of scope review",
-            "resulting_status": "CHANGES_REQUIRED",
+            "feedback_text": "Out of scope review",
+            "status_transition": "CHANGES_REQUIRED",
         },
     )
 
@@ -318,21 +342,22 @@ def test_draft_submission_cannot_be_reviewed(client, db_session):
     assignment_id = create_assignment(client, admin, track_id=track_id)
     submission = create_submission(
         client,
+        db_session,
         student,
         assignment_id,
         content="Still draft",
     ).json()
 
     response = client.post(
-        f"/api/v1/submissions/{submission['id']}/reviews",
+        f"/api/v1/submissions/{submission['id']}/review",
         headers=admin,
         json={
-            "feedback": "Cannot review yet",
-            "resulting_status": "APPROVED",
+            "feedback_text": "Cannot review yet",
+            "status_transition": "APPROVED",
         },
     )
 
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.status_code == status.HTTP_409_CONFLICT
 
 
 def test_submission_detail_includes_files_and_reviews(client, db_session):
@@ -360,6 +385,7 @@ def test_submission_detail_includes_files_and_reviews(client, db_session):
     assignment_id = create_assignment(client, admin, track_id=track_id)
     submission = create_submission(
         client,
+        db_session,
         student,
         assignment_id,
         content="History content",
@@ -371,17 +397,17 @@ def test_submission_detail_includes_files_and_reviews(client, db_session):
         SubmissionFile(
             submission_id=db_submission.id,
             file_name="solution.py",
-            file_path="submissions/solution.py",
+            file_url="submissions/solution.py",
             file_size=128,
-            content_type="text/x-python",
+            file_type="text/x-python",
         )
     )
     db_session.add(
         SubmissionReview(
             submission_id=db_submission.id,
-            feedback="Good work",
+            feedback_text="Good work",
             score=92,
-            resulting_status="APPROVED",
+            status_transition="APPROVED",
         )
     )
     db_session.commit()
@@ -398,10 +424,10 @@ def test_submission_detail_includes_files_and_reviews(client, db_session):
     assert body["github_url"] == "https://github.com/example/submission"
     assert body["files"][0]["file_name"] == "solution.py"
     assert body["files"][0]["file_size_bytes"] == 128
-    assert body["reviews"][0]["feedback"] == "Good work"
-    assert body["reviews"][0]["score"] == 92
-    assert body["reviews"][0]["resulting_state"] == "APPROVED"
-    assert body["reviews"][0]["reviewed_at"]
+    assert body["reviews"][0]["feedback_text"] == "Good work"
+    assert body["reviews"][0]["grade"] == 92
+    assert body["reviews"][0]["status_transition"] == "APPROVED"
+    assert body["reviews"][0]["created_at"]
 
 
 def test_submission_owner_is_derived_from_jwt_and_me_isolated(
@@ -445,12 +471,14 @@ def test_submission_owner_is_derived_from_jwt_and_me_isolated(
 
     first = create_submission(
         client,
+        db_session,
         student_a,
         assignment_id,
         content="Student A work",
     )
     second = create_submission(
         client,
+        db_session,
         student_b,
         assignment_id,
         content="Student B work",
@@ -529,6 +557,7 @@ def test_submission_rejects_invalid_github_url_on_update(client, db_session):
     assignment_id = create_assignment(client, admin, track_id=track_id)
     submission = create_submission(
         client,
+        db_session,
         student,
         assignment_id,
         content="Valid submission",
@@ -584,6 +613,7 @@ def test_student_cannot_read_or_update_another_student_submission(
 
     submission = create_submission(
         client,
+        db_session,
         student_a,
         assignment_id,
         content="Private work",
@@ -594,12 +624,6 @@ def test_student_cannot_read_or_update_another_student_submission(
         headers=student_b,
     )
     assert read_other.status_code == status.HTTP_403_FORBIDDEN
-
-    detail_other = client.get(
-        f"/api/v1/submissions/{submission['id']}",
-        headers=student_b,
-    )
-    assert detail_other.status_code == status.HTTP_403_FORBIDDEN
 
     update_other = client.patch(
         f"/api/v1/submissions/{submission['id']}",
@@ -680,12 +704,14 @@ def test_instructor_track_scoped_access(client, db_session):
 
     allowed_submission = create_submission(
         client,
+        db_session,
         student,
         allowed_assignment_id,
         content="Allowed track submission",
     )
     denied_submission = create_submission(
         client,
+        db_session,
         student,
         denied_assignment_id,
         content="Denied track submission",
@@ -746,6 +772,7 @@ def test_admin_can_read_all_assignment_submissions(client, db_session):
 
     create_submission(
         client,
+        db_session,
         student,
         assignment_id,
         content="Admin-visible submission",
@@ -786,6 +813,7 @@ def test_submission_state_machine(client, db_session):
 
     submission = create_submission(
         client,
+        db_session,
         student,
         assignment_id,
         content="Draft content",
@@ -821,12 +849,11 @@ def test_submission_state_machine(client, db_session):
             headers=student,
             json={
                 "github_url": (
-                    "https://github.com/example/blocked-"
-                    f"{locked_status.lower()}"
+                    "https://github.com/example/blocked-" f"{locked_status.lower()}"
                 )
             },
         )
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_409_CONFLICT
 
     db_submission = db_session.get(Submission, submission["id"])
     assert db_submission is not None

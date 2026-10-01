@@ -1,35 +1,19 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from fastapi import status
 
-from app.crud.crud_user import user as crud_user
 from app.models.quiz import Question, QuestionOption, Quiz, QuizQuestion
 from app.models.track import Track
-from app.schemas.user import UserCreate
+from tests.quiz_helpers import create_user_and_get_token, enroll_fixture_students
 
 
-def _create_student_and_get_token(client, db_session) -> dict[str, str]:
-    email = "quiz-discovery-student@example.com"
-
-    crud_user.create(
+def _create_student_and_get_token(client, db_session):
+    return create_user_and_get_token(
+        client,
         db_session,
-        obj_in=UserCreate(
-            email=email,
-            password="Password123!",
-            full_name="Quiz Discovery Student",
-        ),
+        email="quiz-discovery-student@example.com",
+        full_name="Quiz Student",
     )
-
-    response = client.post(
-        "/api/v1/login/access-token",
-        data={
-            "username": email,
-            "password": "Password123!",
-        },
-    )
-    assert response.status_code == status.HTTP_200_OK
-
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
 def _create_quiz(db_session, *, track_id: int | None = None) -> Quiz:
@@ -46,6 +30,7 @@ def _create_quiz(db_session, *, track_id: int | None = None) -> Quiz:
             db_session.add(track)
             db_session.flush()
 
+    enroll_fixture_students(db_session, track_id)
     quiz = Quiz(
         title="Student Discovery Quiz",
         description="TASK-5.3.7 discovery integration test.",
@@ -146,9 +131,7 @@ def test_student_can_read_active_quiz_without_answer_key(
     body = response.json()
     assert body["id"] == quiz.id
     assert body["passing_score"] == 70
-    assert body["questions"][0]["question"]["text"] == (
-        "Which answer is correct?"
-    )
+    assert body["questions"][0]["question"]["text"] == ("Which answer is correct?")
 
     options = body["questions"][0]["question"]["options"]
     assert all("is_correct" not in option for option in options)

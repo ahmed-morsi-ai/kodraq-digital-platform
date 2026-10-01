@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 
@@ -11,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from app.db.session import get_db
 from app.main import app
 from app.models import Base
+from tests.submission_helpers import submission_data as submission_data
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
@@ -47,6 +48,12 @@ def setup_test_database():
 
     # Create test engine and tables
     test_engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+    with test_engine.begin() as connection:
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        # These retired scaffold tables may remain from earlier test runs.
+        connection.execute(
+            text("DROP TABLE IF EXISTS knowledge_chunks, knowledge_documents")
+        )
     Base.metadata.drop_all(bind=test_engine)
     Base.metadata.create_all(bind=test_engine)
 

@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.admin_identity import PLATFORM_ADMIN_EMAIL
 from app.core.security import ALGORITHM
 from app.crud.crud_user import user as crud_user
 from app.db.session import get_db
@@ -44,6 +45,9 @@ def get_current_user(session: SessionDep, token: TokenDep) -> User:
             detail="User not found",
         )
 
+    if crud_user.ensure_designated_admin(session, user):
+        session.commit()
+
     return user
 
 
@@ -60,12 +64,28 @@ def get_current_active_user(
 
 
 def get_current_active_superuser(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> User:
     if not crud_user.is_superuser(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The user doesn't have enough privileges",
+        )
+
+    return current_user
+
+
+def get_current_active_admin(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> User:
+    if current_user.is_superuser:
+        if current_user.email.casefold() == PLATFORM_ADMIN_EMAIL:
+            return current_user
+    role_name = current_user.role_rel.name.casefold() if current_user.role_rel else ""
+    if current_user.email.casefold() != PLATFORM_ADMIN_EMAIL or role_name != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the designated platform administrator may access admin tools",
         )
 
     return current_user

@@ -8,6 +8,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    JSON,
     String,
     UniqueConstraint,
     func,
@@ -60,6 +61,9 @@ class QuizAttempt(Base, TimestampMixin):
         nullable=False,
     )
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    deadline_at = Column(DateTime(timezone=True), nullable=True)
+    passing_score = Column(Integer, nullable=True)
+    result_snapshot = Column(JSON, nullable=True)
 
     quiz = relationship("Quiz", back_populates="attempts")
     user = relationship("User", back_populates="quiz_attempts")

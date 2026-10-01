@@ -1,5 +1,7 @@
 ﻿from __future__ import annotations
 
+from typing import Optional
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -22,6 +24,7 @@ class Resource(ResourceBase):
 
 class LessonBase(BaseModel):
     title: str
+    description: str | None = None
     content: str | None = None
     video_url: str | None = None
     ordering: int = 0
@@ -31,11 +34,20 @@ class LessonCreate(LessonBase):
     module_id: int
 
 
+class LessonQuizQuestion(BaseModel):
+    id: int
+    question: str
+    options: list[str]
+    correct_index: int
+    explanation: str
+
+
 class Lesson(LessonBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     module_id: int
+    quiz_data: list[LessonQuizQuestion] | None = None
 
 
 class TrackModuleBase(BaseModel):
@@ -57,9 +69,6 @@ class TrackModule(TrackModuleBase):
     lessons: list[Lesson] = Field(default_factory=list)
     resources: list[Resource] = Field(default_factory=list)
 
-
-from pydantic import BaseModel
-from typing import Optional
 
 class TrackBase(BaseModel):
     name: str

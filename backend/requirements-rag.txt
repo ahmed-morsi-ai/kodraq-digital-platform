@@ -1,0 +1,5 @@
+# Optional local CPU ingestion runtime; keep it out of the Vercel API bundle.
+--extra-index-url https://download.pytorch.org/whl/cpu
+-r requirements.txt
+torch==2.14.0+cpu
+sentence-transformers==6.1.0

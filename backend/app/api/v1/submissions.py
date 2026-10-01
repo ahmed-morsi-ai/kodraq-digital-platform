@@ -1,7 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-from pathlib import Path
+from contextlib import contextmanager
+import logging
 from typing import Annotated
+from urllib.parse import quote
 from uuid import UUID, uuid4
 
 from fastapi import (
@@ -9,362 +11,207 @@ from fastapi import (
     Depends,
     File,
     HTTPException,
+    Query,
     Response,
     UploadFile,
     status,
 )
-from sqlalchemy import select
-from sqlalchemy.orm import joinedload, selectinload
+from pydantic import PositiveInt
+from starlette.background import BackgroundTask
+from starlette.responses import StreamingResponse
 
 from app.api.deps import (
     SessionDep,
     get_current_active_assignment_manager,
     get_current_active_user,
 )
-from app.crud.crud_assignment import assignment as crud_assignment
+from app.crud.crud_submission import SubmissionStateError
+from app.core.config import settings
 from app.crud.crud_submission import submission as crud_submission
-from app.models.submission import Submission, SubmissionFile, SubmissionStatus
-from app.models.track_instructor import TrackInstructor
+from app.models.submission import Submission, SubmissionFile
 from app.models.user import User as UserModel
 from app.schemas.submission import (
     SubmissionCreate,
     SubmissionDetailResponse,
     SubmissionResponse,
-    SubmissionReview,
     SubmissionReviewCreate,
     SubmissionUpdate,
 )
 from app.schemas.submission_file import SubmissionFileResponse
-from app.services.storage import StorageService, get_storage_service
+from app.services.storage import FileTooLargeError, StorageService, get_storage_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 assignment_submissions_router = APIRouter()
-
-CurrentUserDep = Annotated[
-    UserModel,
-    Depends(get_current_active_user),
-]
-
+CurrentUserDep = Annotated[UserModel, Depends(get_current_active_user)]
 CurrentAssignmentManagerDep = Annotated[
-    UserModel,
-    Depends(get_current_active_assignment_manager),
+    UserModel, Depends(get_current_active_assignment_manager)
 ]
-
-StorageServiceDep = Annotated[
-    StorageService,
-    Depends(get_storage_service),
-]
-
-UploadFilesDep = Annotated[
-    list[UploadFile],
-    File(...),
-]
+StorageServiceDep = Annotated[StorageService, Depends(get_storage_service)]
+UploadFilesDep = Annotated[list[UploadFile], File(...)]
+Offset = Annotated[int, Query(ge=0)]
+Limit = Annotated[int, Query(ge=0)]
 
 
-def _is_admin_or_superuser(user: UserModel) -> bool:
-    if user.is_superuser:
-        return True
-
-    role_name = user.role_rel.name.casefold() if user.role_rel else ""
-    return role_name == "admin"
-
-
-def _is_instructor(user: UserModel) -> bool:
-    role_name = user.role_rel.name.casefold() if user.role_rel else ""
-    return role_name == "instructor"
-
-
-def _is_instructor_assigned_to_track(
-    session: SessionDep,
-    *,
-    instructor_id: int,
-    track_id: int | None,
-) -> bool:
-    if track_id is None:
-        return False
-
-    stmt = select(TrackInstructor.track_id).where(
-        TrackInstructor.track_id == track_id,
-        TrackInstructor.instructor_id == instructor_id,
-    )
-    return session.scalar(stmt) is not None
+@contextmanager
+def _submission_errors():
+    try:
+        yield
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except SubmissionStateError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
-def _can_manage_assignment_submissions(
-    session: SessionDep,
-    *,
-    user: UserModel,
-    track_id: int | None,
-) -> bool:
-    if _is_admin_or_superuser(user):
-        return True
-
-    if not _is_instructor(user):
-        return False
-
-    return _is_instructor_assigned_to_track(
-        session,
-        instructor_id=user.id,
-        track_id=track_id,
-    )
-
-
-def _get_submission_or_404(
-    session: SessionDep,
-    submission_id: int,
-) -> Submission:
+def _get_submission(session: SessionDep, submission_id: int) -> Submission:
     submission = crud_submission.get(session, id=submission_id)
-    if not submission:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Submission not found",
-        )
-
+    if submission is None:
+        raise LookupError("Submission not found")
     return submission
 
 
-def _ensure_submission_manager_access(
-    session: SessionDep,
-    *,
-    user: UserModel,
-    submission: Submission,
-) -> None:
-    if _can_manage_assignment_submissions(
-        session,
-        user=user,
-        track_id=submission.assignment.track_id,
-    ):
-        return
-
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="You do not have access to this submission.",
-    )
-
-
-@router.post(
-    "",
-    response_model=SubmissionResponse,
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("", response_model=SubmissionResponse, status_code=status.HTTP_201_CREATED)
 def create_submission(
-    session: SessionDep,
-    submission_in: SubmissionCreate,
-    current_user: CurrentUserDep,
+    session: SessionDep, submission_in: SubmissionCreate, current_user: CurrentUserDep
 ) -> Submission:
-    assignment = crud_assignment.get(session, id=submission_in.assignment_id)
-    if not assignment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Assignment not found",
-        )
-
-    return crud_submission.create_for_user(
-        session,
-        user_id=current_user.id,
-        obj_in=submission_in,
-    )
+    with _submission_errors():
+        return crud_submission.create(session, obj_in=submission_in, actor=current_user)
 
 
 @router.get("/me", response_model=list[SubmissionResponse])
 def read_my_submissions(
     session: SessionDep,
     current_user: CurrentUserDep,
-    skip: int = 0,
-    limit: int = 100,
+    skip: Offset = 0,
+    limit: Limit = 100,
+    assignment_id: PositiveInt | None = None,
 ) -> list[Submission]:
-    submissions = crud_submission.get_multi_by_user(
-        session,
-        user_id=current_user.id,
-        skip=skip,
-        limit=limit,
-    )
-    return list(submissions)
+    with _submission_errors():
+        return list(
+            crud_submission.get_multi_by_user(
+                session,
+                actor=current_user,
+                skip=skip,
+                limit=limit,
+                assignment_id=assignment_id,
+            )
+        )
 
 
 @router.get("/{submission_id}", response_model=SubmissionDetailResponse)
 def read_submission(
-    submission_id: int,
-    session: SessionDep,
-    current_user: CurrentUserDep,
+    submission_id: PositiveInt, session: SessionDep, current_user: CurrentUserDep
 ) -> Submission:
-    submission = session.scalar(
-        select(Submission)
-        .options(
-            joinedload(Submission.assignment),
-            selectinload(Submission.files),
-            selectinload(Submission.reviews),
+    with _submission_errors():
+        return crud_submission.get_for_user(
+            session, submission_id=submission_id, actor=current_user
         )
-        .where(Submission.id == submission_id)
-    )
-    if not submission:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Submission not found",
-        )
-
-    if submission.user_id == current_user.id:
-        return submission
-
-    _ensure_submission_manager_access(
-        session,
-        user=current_user,
-        submission=submission,
-    )
-    return submission
 
 
 @router.patch("/{submission_id}", response_model=SubmissionResponse)
 def update_submission(
-    submission_id: int,
+    submission_id: PositiveInt,
     session: SessionDep,
     submission_in: SubmissionUpdate,
     current_user: CurrentUserDep,
 ) -> Submission:
-    submission = _get_submission_or_404(session, submission_id)
-
-    if submission.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the submission owner can update it.",
+    with _submission_errors():
+        return crud_submission.update(
+            session,
+            db_obj=_get_submission(session, submission_id),
+            obj_in=submission_in,
+            actor=current_user,
         )
 
-    if submission.status not in {
-        SubmissionStatus.DRAFT.value,
-        SubmissionStatus.CHANGES_REQUIRED.value,
-    }:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only draft or changes-required submissions can be updated.",
-        )
 
-    submission_data = (
-        submission_in.model_dump(exclude_unset=True)
-        if hasattr(submission_in, "model_dump")
-        else submission_in
-    )
-    if submission_in.status == SubmissionStatus.SUBMITTED.value:
-        submission_data["status"] = SubmissionStatus.SUBMITTED.value
-
-    return crud_submission.update(
-        session,
-        db_obj=submission,
-        obj_in=submission_data,
-    )
-
-
-@router.post(
-    "/{submission_id}/reviews",
-    response_model=SubmissionResponse,
-)
-def create_submission_review(
-    submission_id: int,
+@router.post("/{submission_id}/review", response_model=SubmissionResponse)
+def review_submission(
+    submission_id: PositiveInt,
     review_in: SubmissionReviewCreate,
     session: SessionDep,
     current_user: CurrentAssignmentManagerDep,
 ) -> Submission:
-    submission = _get_submission_or_404(session, submission_id)
-    _ensure_submission_manager_access(
-        session,
-        user=current_user,
-        submission=submission,
-    )
-
-    if submission.status == SubmissionStatus.DRAFT.value:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Draft submissions cannot be reviewed.",
+    with _submission_errors():
+        return crud_submission.create_review_and_transition(
+            session,
+            db_obj=_get_submission(session, submission_id),
+            actor=current_user,
+            obj_in=review_in,
         )
-
-    return crud_submission.create_review_and_transition(
-        session,
-        db_obj=submission,
-        reviewer_id=current_user.id,
-        obj_in=review_in,
-    )
-
-
-@router.post(
-    "/{submission_id}/review",
-    response_model=SubmissionResponse,
-)
-def review_submission(
-    submission_id: int,
-    review_in: SubmissionReview,
-    session: SessionDep,
-    current_user: CurrentAssignmentManagerDep,
-) -> Submission:
-    del current_user
-    submission = _get_submission_or_404(session, submission_id)
-
-    return crud_submission.review(
-        session,
-        db_obj=submission,
-        obj_in=review_in,
-    )
 
 
 @assignment_submissions_router.get(
-    "/{assignment_id}/submissions",
-    response_model=list[SubmissionResponse],
+    "/{assignment_id}/submissions", response_model=list[SubmissionResponse]
 )
 def read_assignment_submissions(
-    assignment_id: int,
+    assignment_id: PositiveInt,
     session: SessionDep,
     current_user: CurrentAssignmentManagerDep,
-    skip: int = 0,
-    limit: int = 100,
+    skip: Offset = 0,
+    limit: Limit = 100,
 ) -> list[Submission]:
-    assignment = crud_assignment.get(session, id=assignment_id)
-    if not assignment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Assignment not found",
+    with _submission_errors():
+        return list(
+            crud_submission.get_multi_by_assignment(
+                session,
+                assignment_id=assignment_id,
+                actor=current_user,
+                skip=skip,
+                limit=limit,
+            )
         )
 
-    if not _can_manage_assignment_submissions(
-        session,
-        user=current_user,
-        track_id=assignment.track_id,
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Instructor is not assigned to this track.",
-        )
 
-    submissions = crud_submission.get_multi_by_assignment(
-        session,
-        assignment_id=assignment_id,
-        skip=skip,
-        limit=limit,
+def _file_record(
+    session: SessionDep, submission_id: int, file_id: UUID
+) -> SubmissionFile:
+    record = session.get(SubmissionFile, file_id)
+    if record is None or record.submission_id != submission_id:
+        raise HTTPException(status_code=404, detail="Submission file not found")
+    return record
+
+
+@router.get("/{submission_id}/files/{file_id}/download")
+def download_submission_file(
+    submission_id: PositiveInt,
+    file_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUserDep,
+    storage: StorageServiceDep,
+) -> StreamingResponse:
+    with _submission_errors():
+        crud_submission.get_for_user(
+            session, submission_id=submission_id, actor=current_user
+        )
+    record = _file_record(session, submission_id, file_id)
+    try:
+        stream = storage.open_file(object_key=record.file_url)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=404, detail="Stored file not found") from error
+    except OSError as error:
+        raise HTTPException(
+            status_code=503, detail="File storage is unavailable"
+        ) from error
+
+    def chunks():
+        try:
+            while data := stream.read(64 * 1024):
+                yield data
+        finally:
+            stream.close()
+
+    return StreamingResponse(
+        chunks(),
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(record.file_name, safe='')}",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        },
+        background=BackgroundTask(stream.close),
     )
-    return list(submissions)
-def _ensure_submission_file_write_access(
-    submission: Submission,
-    current_user: UserModel,
-) -> None:
-    if submission.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the submission owner can manage its files.",
-        )
-
-    if submission.status not in {
-        SubmissionStatus.DRAFT.value,
-        SubmissionStatus.CHANGES_REQUIRED.value,
-    }:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Files can only be changed while the submission is editable.",
-        )
-
-
-def _build_submission_file_key(
-    submission_id: int,
-    file_name: str | None,
-) -> str:
-    safe_name = Path(file_name or "unnamed-file").name
-    return f"submissions/{submission_id}/{uuid4().hex}_{safe_name}"
 
 
 @router.post(
@@ -373,58 +220,73 @@ def _build_submission_file_key(
     status_code=status.HTTP_201_CREATED,
 )
 def upload_submission_files(
-    submission_id: int,
+    submission_id: PositiveInt,
     session: SessionDep,
     current_user: CurrentUserDep,
     storage: StorageServiceDep,
     files: UploadFilesDep,
 ) -> list[SubmissionFile]:
-    submission = _get_submission_or_404(session, submission_id)
-    _ensure_submission_file_write_access(submission, current_user)
-
-    if not files:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one file is required.",
+    with _submission_errors():
+        submission = crud_submission.get_editable(
+            session, submission_id=submission_id, actor=current_user
         )
+    if not files:
+        raise HTTPException(status_code=400, detail="At least one file is required.")
+    if len(submission.files) + len(files) > settings.SUBMISSION_MAX_FILES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"A submission can contain at most {settings.SUBMISSION_MAX_FILES} files.",
+        )
+    for upload in files:
+        name = upload.filename or "unnamed-file"
+        if (
+            len(name) > 512
+            or any(ord(char) < 32 for char in name)
+            or len(upload.content_type or "") > 255
+        ):
+            raise HTTPException(
+                status_code=422, detail="Invalid file name or content type"
+            )
 
     stored_keys: list[str] = []
     db_files: list[SubmissionFile] = []
-
     try:
         for upload in files:
-            object_key = _build_submission_file_key(
-                submission.id,
-                upload.filename,
-            )
+            object_key = f"submissions/{submission.id}/{uuid4().hex}"
             stored = storage.upload_file(
                 file=upload.file,
                 object_key=object_key,
                 content_type=upload.content_type,
             )
             stored_keys.append(stored.object_key)
-
             db_file = SubmissionFile(
                 submission_id=submission.id,
                 file_name=upload.filename or "unnamed-file",
-                file_path=stored.object_key,
+                file_url=stored.object_key,
                 file_size=stored.size_bytes,
-                content_type=upload.content_type or "application/octet-stream",
+                file_type=upload.content_type or "application/octet-stream",
             )
             session.add(db_file)
             db_files.append(db_file)
-
         session.commit()
-
-        for db_file in db_files:
-            session.refresh(db_file)
-
-        return db_files
-    except Exception:
+    except Exception as error:
         session.rollback()
         for object_key in reversed(stored_keys):
-            storage.delete_file(object_key=object_key)
+            try:
+                storage.delete_file(object_key=object_key)
+            except OSError:
+                logger.exception("Failed to clean up an uncommitted upload")
+        if isinstance(error, FileTooLargeError):
+            raise HTTPException(status_code=413, detail=str(error)) from error
+        if isinstance(error, OSError):
+            raise HTTPException(
+                status_code=503, detail="File storage is unavailable"
+            ) from error
         raise
+    # A response/refresh failure must never delete successfully committed files.
+    for db_file in db_files:
+        session.refresh(db_file)
+    return db_files
 
 
 @router.delete(
@@ -434,23 +296,27 @@ def upload_submission_files(
     response_model=None,
 )
 def delete_submission_file(
-    submission_id: int,
+    submission_id: PositiveInt,
     file_id: UUID,
     session: SessionDep,
     current_user: CurrentUserDep,
     storage: StorageServiceDep,
 ) -> None:
-    submission = _get_submission_or_404(session, submission_id)
-    _ensure_submission_file_write_access(submission, current_user)
-
-    db_file = session.get(SubmissionFile, file_id)
-    if not db_file or db_file.submission_id != submission.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Submission file not found",
+    with _submission_errors():
+        submission = crud_submission.get_editable(
+            session, submission_id=submission_id, actor=current_user
         )
-
-    storage.delete_file(object_key=db_file.file_path)
+    db_file = _file_record(session, submission.id, file_id)
+    object_key = db_file.file_url
     session.delete(db_file)
-    session.commit()
-
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    # Remove access first. Failed storage cleanup leaves a private orphan, never
+    # a database record pointing at bytes lost after a failed database commit.
+    try:
+        storage.delete_file(object_key=object_key)
+    except OSError:
+        logger.exception("Failed to remove detached submission file %s", file_id)

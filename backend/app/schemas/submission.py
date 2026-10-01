@@ -1,62 +1,79 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Literal
+from uuid import UUID
 
 from pydantic import (
-    AnyHttpUrl,
     BaseModel,
     ConfigDict,
     Field,
-    TypeAdapter,
+    PositiveInt,
     field_validator,
 )
 
 from app.models.submission import SubmissionStatus
 from app.schemas.submission_file import SubmissionFileResponse
 
-SubmissionReviewStatus = Literal[
-    "UNDER_REVIEW",
-    "CHANGES_REQUIRED",
-    "APPROVED",
-    "REJECTED",
-]
-
 
 class SubmissionBase(BaseModel):
     content: str | None = None
-    github_url: str | None = None
-    file_path_or_url: str | None = None
+    github_url: str | None = Field(default=None, max_length=512)
+    file_path_or_url: str | None = Field(default=None, max_length=1024)
 
+
+class SubmissionInput(SubmissionBase):
     @field_validator("github_url")
     @classmethod
     def validate_github_url(cls, value: str | None) -> str | None:
         if value is None:
             return None
 
-        parsed_url = TypeAdapter(AnyHttpUrl).validate_python(value)
-        if parsed_url.host.casefold() != "github.com":
-            raise ValueError("github_url must belong to github.com")
+        match = re.fullmatch(
+            r"https://github\.com/([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)/([A-Za-z0-9_.-]{1,100})/?",
+            value,
+            flags=re.IGNORECASE | re.ASCII,
+        )
+        if match is None or match[2] in {".", "..", ".git"}:
+            raise ValueError(
+                "Use a GitHub repository URL: https://github.com/owner/repository"
+            )
+        return f"https://github.com/{match[1]}/{match[2]}"
 
-        return str(parsed_url)
+
+class SubmissionCreate(SubmissionInput):
+    model_config = ConfigDict(extra="forbid")
+
+    assignment_id: PositiveInt
 
 
-class SubmissionCreate(SubmissionBase):
-    assignment_id: int
+class SubmissionUpdate(SubmissionInput):
+    model_config = ConfigDict(extra="forbid")
 
-
-class SubmissionUpdate(SubmissionBase):
     status: Literal["SUBMITTED"] | None = None
+
+    @field_validator("status")
+    @classmethod
+    def reject_null_status(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("status cannot be null")
+        return value
 
 
 class SubmissionReviewCreate(BaseModel):
-    feedback: str
-    score: int | None = None
-    resulting_status: SubmissionStatus
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
+    feedback_text: str = Field(min_length=1)
+    grade: int | None = Field(default=None, strict=True, ge=-(2**31), le=2**31 - 1)
+    status_transition: SubmissionStatus
 
-class SubmissionReview(BaseModel):
-    status: SubmissionReviewStatus
+    @field_validator("status_transition")
+    @classmethod
+    def validate_review_state(cls, value: SubmissionStatus) -> SubmissionStatus:
+        if value in {SubmissionStatus.DRAFT, SubmissionStatus.SUBMITTED}:
+            raise ValueError("Reviews must select a review state or decision")
+        return value
 
 
 class SubmissionResponse(SubmissionBase):
@@ -66,6 +83,8 @@ class SubmissionResponse(SubmissionBase):
     assignment_id: int
     user_id: int
     status: SubmissionStatus
+    grade: int | None
+    submitted_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -73,12 +92,23 @@ class SubmissionResponse(SubmissionBase):
 class SubmissionReviewResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    feedback: str
-    score: int | None = None
-    resulting_state: SubmissionStatus = Field(validation_alias="resulting_status")
-    reviewed_at: datetime = Field(validation_alias="created_at")
+    id: UUID
+    submission_id: int
+    reviewer_id: int | None
+    feedback_text: str
+    grade: int | None = Field(validation_alias="score")
+    status_transition: SubmissionStatus
+    created_at: datetime
+
+
+class SubmissionAttemptResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    submitted_at: datetime
 
 
 class SubmissionDetailResponse(SubmissionResponse):
+    attempts: list[SubmissionAttemptResponse]
     files: list[SubmissionFileResponse]
     reviews: list[SubmissionReviewResponse]

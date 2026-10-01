@@ -1,55 +1,13 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from fastapi import status
 
 from app.crud.crud_user import user as crud_user
-from app.models.quiz import Question, QuestionOption, Quiz, QuizQuestion
-from app.models.role import Role
+from app.models.quiz import Quiz
 from app.models.track import Track
 from app.models.track_instructor import TrackInstructor
-from app.schemas.user import UserCreate
-
-
-def _create_user_and_get_token(
-    client,
-    db_session,
-    *,
-    email: str,
-    full_name: str,
-    role_name: str | None = None,
-    is_superuser: bool = False,
-) -> dict[str, str]:
-    role_id = None
-
-    if role_name:
-        role = db_session.query(Role).filter(Role.name == role_name).first()
-        if role is None:
-            role = Role(name=role_name, description=f"{role_name} role")
-            db_session.add(role)
-            db_session.flush()
-        role_id = role.id
-
-    crud_user.create(
-        db_session,
-        obj_in=UserCreate(
-            email=email,
-            password="Password123!",
-            full_name=full_name,
-            role_id=role_id,
-            is_superuser=is_superuser,
-        ),
-    )
-
-    response = client.post(
-        "/api/v1/login/access-token",
-        data={
-            "username": email,
-            "password": "Password123!",
-        },
-    )
-    assert response.status_code == status.HTTP_200_OK
-
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+from tests.quiz_helpers import create_user_and_get_token as _create_user_and_get_token
+from tests.quiz_helpers import create_quiz as _create_quiz
 
 
 def _create_track(
@@ -89,46 +47,6 @@ def _assign_instructor(
     db_session.commit()
 
 
-def _create_quiz(
-    db_session,
-    *,
-    track_id: int,
-) -> Quiz:
-    quiz = Quiz(
-        title="Results Quiz",
-        description="TASK-5.3.6 results integration test.",
-        track_id=track_id,
-        passing_score=50,
-        time_limit_minutes=30,
-        is_active=True,
-    )
-
-    question = Question(
-        text="Which answer is correct?",
-        question_type="MULTIPLE_CHOICE",
-        points=10,
-        difficulty=1,
-        track_id=track_id,
-        options=[
-            QuestionOption(text="Correct", is_correct=True),
-            QuestionOption(text="Incorrect", is_correct=False),
-        ],
-    )
-
-    quiz.question_links = [
-        QuizQuestion(
-            question=question,
-            ordering=1,
-        )
-    ]
-
-    db_session.add(quiz)
-    db_session.commit()
-    db_session.refresh(quiz)
-
-    return quiz
-
-
 def _complete_attempt(
     client,
     student_headers,
@@ -142,9 +60,7 @@ def _complete_attempt(
 
     attempt_id = started.json()["id"]
     question = quiz.question_links[0].question
-    correct_option = next(
-        option for option in question.options if option.is_correct
-    )
+    correct_option = next(option for option in question.options if option.is_correct)
 
     submitted = client.post(
         f"/api/v1/quiz-attempts/{attempt_id}/submit",
@@ -201,9 +117,7 @@ def test_student_can_view_own_completed_quiz_result(client, db_session):
     assert len(body["questions"]) == 1
     item = body["questions"][0]
     question = quiz.question_links[0].question
-    correct_option = next(
-        option for option in question.options if option.is_correct
-    )
+    correct_option = next(option for option in question.options if option.is_correct)
 
     assert item["question_id"] == question.id
     assert item["question_text"] == question.text

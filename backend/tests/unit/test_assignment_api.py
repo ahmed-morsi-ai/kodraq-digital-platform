@@ -1,12 +1,17 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
+from datetime import UTC, datetime
+
+import pytest
 from fastapi import status
 
 from app.api.deps import get_current_active_user
 from app.core.config import settings
 from app.crud.crud_assignment import create_assignment
+from app.models.enrollment import Enrollment
 from app.models.role import Role
 from app.models.track import Lesson, Track, TrackModule
+from app.models.track_instructor import TrackInstructor
 from app.models.user import User
 from app.schemas.assignment import AssignmentCreate
 
@@ -38,6 +43,8 @@ def _create_role_user(
     db_session.flush()
 
     return user
+
+
 def test_student_cannot_update_assignment(client, db_session):
     student = _create_role_user(
         db_session,
@@ -128,6 +135,15 @@ def test_student_can_read_assignments(client, db_session):
         role_name="student",
     )
     assignment, track, _, _ = _create_assignment(db_session)
+    db_session.add(
+        Enrollment(
+            user_id=student.id,
+            track_id=track.id,
+            status="active",
+            enrolled_at=datetime.now(UTC),
+        )
+    )
+    db_session.flush()
 
     app_dependency_overrides = client.app.dependency_overrides
     app_dependency_overrides[get_current_active_user] = lambda: student
@@ -190,6 +206,8 @@ def test_instructor_can_create_assignment(client, db_session):
         role_name="instructor",
     )
     track, module, lesson = _create_context(db_session)
+    db_session.add(TrackInstructor(track_id=track.id, instructor_id=instructor.id))
+    db_session.flush()
 
     app_dependency_overrides = client.app.dependency_overrides
     app_dependency_overrides[get_current_active_user] = lambda: instructor
@@ -286,7 +304,16 @@ def test_assignment_api_get_by_id_and_not_found(client, db_session):
         db_session,
         role_name="student",
     )
-    assignment, _, _, _ = _create_assignment(db_session)
+    assignment, track, _, _ = _create_assignment(db_session)
+    db_session.add(
+        Enrollment(
+            user_id=student.id,
+            track_id=track.id,
+            status="active",
+            enrolled_at=datetime.now(UTC),
+        )
+    )
+    db_session.flush()
 
     app_dependency_overrides = client.app.dependency_overrides
     app_dependency_overrides[get_current_active_user] = lambda: student
@@ -367,3 +394,135 @@ def test_admin_can_delete_assignment(client, db_session):
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
     assert response.content == b""
+
+
+@pytest.mark.parametrize("method", ["post", "patch"])
+@pytest.mark.parametrize(
+    ("field", "detail"),
+    [
+        ("track_id", "Track not found"),
+        ("module_id", "Track module not found"),
+        ("lesson_id", "Lesson not found"),
+    ],
+)
+def test_assignment_api_missing_context_returns_404(
+    client, db_session, method, field, detail
+):
+    admin = _create_role_user(db_session, role_name="admin")
+    created, track, module, lesson = _create_assignment(db_session)
+    client.app.dependency_overrides[get_current_active_user] = lambda: admin
+    if method == "post":
+        payload = {
+            "title": "Missing context",
+            "description": "Description",
+            "instructions": "Instructions",
+            "difficulty": "beginner",
+            field: 999999,
+        }
+        response = client.post(ASSIGNMENTS_URL, json=payload)
+    else:
+        response = client.patch(f"{ASSIGNMENTS_URL}/{created.id}", json={field: 999999})
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json()["detail"] == detail
+    db_session.refresh(created)
+    assert (created.track_id, created.module_id, created.lesson_id) == (
+        track.id,
+        module.id,
+        lesson.id,
+    )
+
+
+@pytest.mark.parametrize("mismatch", ["module_track", "lesson_module", "lesson_track"])
+def test_assignment_api_partial_update_rejects_inconsistent_context(
+    client, db_session, mismatch
+):
+    admin = _create_role_user(db_session, role_name="admin")
+    created, track, module, lesson = _create_assignment(db_session)
+    other_track = Track(name="Other PATCH track", slug="other-patch-track")
+    other_module = TrackModule(title="Other PATCH module", track=other_track)
+    db_session.add_all([other_track, other_module])
+    db_session.flush()
+    changes, detail = {
+        "module_track": (
+            {"track_id": other_track.id},
+            "module_id does not belong to track_id.",
+        ),
+        "lesson_module": (
+            {"track_id": None, "module_id": other_module.id},
+            "lesson_id does not belong to module_id.",
+        ),
+        "lesson_track": (
+            {"track_id": other_track.id, "module_id": None},
+            "lesson_id does not belong to track_id.",
+        ),
+    }[mismatch]
+    client.app.dependency_overrides[get_current_active_user] = lambda: admin
+    response = client.patch(f"{ASSIGNMENTS_URL}/{created.id}", json=changes)
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert response.json()["detail"] == detail
+    db_session.refresh(created)
+    assert (created.track_id, created.module_id, created.lesson_id) == (
+        track.id,
+        module.id,
+        lesson.id,
+    )
+
+
+@pytest.mark.parametrize("method", ["get", "patch", "delete"])
+def test_assignment_api_missing_record_returns_404(client, db_session, method):
+    admin = _create_role_user(db_session, role_name="admin")
+    client.app.dependency_overrides[get_current_active_user] = lambda: admin
+    kwargs = {"json": {"title": "Missing assignment"}} if method == "patch" else {}
+    response = getattr(client, method)(f"{ASSIGNMENTS_URL}/999999", **kwargs)
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json()["detail"] == "Assignment not found"
+
+
+@pytest.mark.parametrize("invalid", [{"title": None}, {"id": 999999}])
+def test_assignment_api_rejects_invalid_update_fields(client, db_session, invalid):
+    admin = _create_role_user(db_session, role_name="admin")
+    created, _, _, _ = _create_assignment(db_session)
+    original_id = created.id
+    client.app.dependency_overrides[get_current_active_user] = lambda: admin
+    response = client.patch(f"{ASSIGNMENTS_URL}/{created.id}", json=invalid)
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    db_session.refresh(created)
+    assert created.title == "API Assignment"
+    assert created.id == original_id
+
+
+@pytest.mark.parametrize("field", ["skip", "limit"])
+def test_assignment_api_rejects_negative_pagination(client, db_session, field):
+    student = _create_role_user(db_session, role_name="student")
+    client.app.dependency_overrides[get_current_active_user] = lambda: student
+    response = client.get(ASSIGNMENTS_URL, params={field: -1})
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    response = client.get(ASSIGNMENTS_URL, params={"limit": 0})
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == []
+
+
+def test_assignment_api_patch_preserves_falsy_values_and_clears_optional_context(
+    client, db_session
+):
+    admin = _create_role_user(db_session, role_name="admin")
+    created, track, module, _ = _create_assignment(db_session)
+    client.app.dependency_overrides[get_current_active_user] = lambda: admin
+    response = client.patch(
+        f"{ASSIGNMENTS_URL}/{created.id}",
+        json={
+            "lesson_id": None,
+            "ordering": 0,
+            "is_mandatory": False,
+            "is_active": False,
+        },
+    )
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["lesson_id"] is None
+    assert data["track_id"] == track.id
+    assert data["module_id"] == module.id
+    assert data["ordering"] == 0
+    assert data["is_mandatory"] is False
+    assert data["is_active"] is False
+    assert data["instructions"] == "API assignment instructions"

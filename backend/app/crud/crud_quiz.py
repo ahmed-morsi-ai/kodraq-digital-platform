@@ -1,330 +1,418 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
 
-from sqlalchemy import or_, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session, aliased, selectinload
 
 from app.crud.base import CRUDBase
+from app.crud.crud_assignment import assignment as curriculum
 from app.models.quiz import Question, QuestionOption, Quiz, QuizQuestion
 from app.models.track import Lesson, TrackModule
-from app.schemas.quiz import (
-    QuestionCreate,
-    QuestionUpdate,
-    QuizCreate,
-    QuizQuestionCreate,
-    QuizUpdate,
-)
+from app.models.track_instructor import TrackInstructor
+from app.models.user import User
+from app.schemas.quiz import QuestionCreate, QuestionUpdate, QuizCreate, QuizUpdate
 
 
-def _question_options_query():
-    return selectinload(Question.options)
+def _is_admin(actor: User) -> bool:
+    return actor.is_superuser or bool(
+        actor.role_rel and actor.role_rel.name.casefold() == "admin"
+    )
 
 
-def _quiz_questions_query():
-    return selectinload(Quiz.question_links).selectinload(
-        QuizQuestion.question
-    ).selectinload(Question.options)
-
-
-class CRUDQuestion(CRUDBase[Question, QuestionCreate, QuestionUpdate]):
-    def _get_with_options(
-        self,
-        db: Session,
-        *,
-        question_id: int,
-    ) -> Question | None:
-        stmt = (
-            select(Question)
-            .options(_question_options_query())
-            .where(Question.id == question_id)
+def _require_manager(actor: User) -> None:
+    if not actor.is_active or (
+        not _is_admin(actor)
+        and (actor.role_rel is None or actor.role_rel.name.casefold() != "instructor")
+    ):
+        raise PermissionError(
+            "Only active admins and instructors can manage quizzes and questions."
         )
-        return db.execute(stmt).scalar_one_or_none()
 
-    def get(
-        self,
-        db: Session,
-        id: int,
-    ) -> Question | None:
-        return self._get_with_options(db, question_id=id)
 
-    def create(
-        self,
-        db: Session,
-        *,
-        obj_in: QuestionCreate,
-    ) -> Question:
-        data = obj_in.model_dump()
-        options = data.pop("options", [])
-        db_obj = Question(**data)
-        db_obj.options = [QuestionOption(**option) for option in options]
-        db.add(db_obj)
+def _track_id(db: Session, values: dict) -> int | None:
+    return curriculum.resolve_track_id(
+        db,
+        **{
+            field: values.get(field) for field in ("track_id", "module_id", "lesson_id")
+        },
+    )
+
+
+def _context(record) -> dict:
+    return {
+        field: getattr(record, field)
+        for field in ("track_id", "module_id", "lesson_id")
+    }
+
+
+def _authorize_track(db: Session, actor: User, track_id: int | None) -> None:
+    _require_manager(actor)
+    if _is_admin(actor):
+        return
+    if (
+        track_id is None
+        or db.scalar(
+            select(TrackInstructor.track_id).where(
+                TrackInstructor.instructor_id == actor.id,
+                TrackInstructor.track_id == track_id,
+            )
+        )
+        is None
+    ):
+        raise PermissionError("Instructor is not assigned to this curriculum track.")
+
+
+def _authorize_record(db: Session, actor: User, record) -> None:
+    _require_manager(actor)
+    if not _is_admin(actor):
+        try:
+            track_id = _track_id(db, _context(record))
+        except (LookupError, ValueError) as error:
+            raise PermissionError(
+                "The record has inconsistent curriculum references."
+            ) from error
+        _authorize_track(db, actor, track_id)
+
+
+def _options(model):
+    if model is Question:
+        return selectinload(Question.options)
+    return (
+        selectinload(Quiz.question_links)
+        .selectinload(QuizQuestion.question)
+        .selectinload(Question.options)
+    )
+
+
+def _commit(db: Session, record):
+    try:
         db.commit()
-        return self._get_with_options(db, question_id=db_obj.id)  # type: ignore[return-value]
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(record)
+    return record
 
-    def get_multi_by_track(
-        self,
-        db: Session,
-        *,
-        track_id: int,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> Sequence[Question]:
-        return self._get_multi_by_scope(
-            db,
-            scope_filter=or_(
-                Question.track_id == track_id,
-                Question.lesson.has(
-                    Lesson.module.has(TrackModule.track_id == track_id)
-                ),
+
+def _get_many(
+    db: Session,
+    model,
+    *,
+    track_id=None,
+    module_id=None,
+    lesson_id=None,
+    skip=0,
+    limit=100,
+    allowed_tracks=None,
+    active_only=False,
+):
+    if skip < 0 or limit < 0:
+        raise ValueError("Pagination values must be non-negative.")
+    module, lesson, lesson_module = (
+        aliased(TrackModule),
+        aliased(Lesson),
+        aliased(TrackModule),
+    )
+    owner = func.coalesce(model.track_id, module.track_id, lesson_module.track_id)
+    stmt = (
+        select(model)
+        .outerjoin(module, model.module_id == module.id)
+        .outerjoin(lesson, model.lesson_id == lesson.id)
+        .outerjoin(lesson_module, lesson.module_id == lesson_module.id)
+        .where(
+            or_(model.module_id.is_(None), module.track_id == owner),
+            or_(model.lesson_id.is_(None), lesson_module.track_id == owner),
+            or_(
+                model.module_id.is_(None),
+                model.lesson_id.is_(None),
+                lesson.module_id == model.module_id,
             ),
-            skip=skip,
-            limit=limit,
+        )
+    )
+    if track_id is not None:
+        stmt = stmt.where(owner == track_id)
+    if module_id is not None:
+        stmt = stmt.where(
+            or_(model.module_id == module_id, lesson.module_id == module_id)
+        )
+    if lesson_id is not None:
+        stmt = stmt.where(model.lesson_id == lesson_id)
+    if allowed_tracks is not None:
+        stmt = stmt.where(owner.in_(allowed_tracks))
+    if active_only:
+        stmt = stmt.where(Quiz.is_active.is_(True))
+    return db.scalars(
+        stmt.options(_options(model)).order_by(model.id).offset(skip).limit(limit)
+    ).all()
+
+
+class _CurriculumCRUD(CRUDBase):
+    def get(self, db: Session, id: int):
+        """Internal read; public question-bank access uses get_for_manager."""
+        return db.scalar(
+            select(self.model).options(_options(self.model)).where(self.model.id == id)
         )
 
-    def get_multi_by_lesson(
-        self,
-        db: Session,
-        *,
-        lesson_id: int,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> Sequence[Question]:
-        return self._get_multi_by_scope(
-            db,
-            scope_filter=Question.lesson_id == lesson_id,
-            skip=skip,
-            limit=limit,
+    def _locked(self, db: Session, record_id: int):
+        record = db.scalar(
+            select(self.model)
+            .where(self.model.id == record_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
+        if record is None:
+            raise LookupError(f"{self.model.__name__} not found")
+        return record
 
-    def _get_multi_by_scope(
-        self,
-        db: Session,
-        *,
-        scope_filter: Any,
-        skip: int,
-        limit: int,
-    ) -> Sequence[Question]:
-        stmt = (
-            select(Question)
-            .options(_question_options_query())
-            .where(scope_filter)
-            .order_by(Question.id)
-            .offset(skip)
-            .limit(limit)
+    def get_for_manager(self, db: Session, *, id: int, actor: User):
+        _require_manager(actor)
+        record = self.get(db, id=id)
+        if record is None:
+            raise LookupError(f"{self.model.__name__} not found")
+        _authorize_record(db, actor, record)
+        if isinstance(record, Quiz):
+            for link in record.question_links:
+                _authorize_record(db, actor, link.question)
+        return record
+
+    def remove(self, db: Session, *, id: int, actor: User):
+        _require_manager(actor)
+        record = self._locked(db, id)
+        _authorize_record(db, actor, record)
+        if isinstance(record, Question):
+            # Historical scaffolding allowed cross-track mappings. Deleting a
+            # question also deletes its links, so authorize those quizzes too.
+            for link in record.quiz_questions:
+                _authorize_record(db, actor, link.quiz)
+        db.delete(record)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        return record
+
+
+class CRUDQuestion(_CurriculumCRUD):
+    def create(self, db: Session, *, obj_in: QuestionCreate, actor: User) -> Question:
+        _require_manager(actor)
+        data = QuestionCreate.model_validate(obj_in.model_dump()).model_dump()
+        _authorize_track(db, actor, _track_id(db, data))
+        options = data.pop("options")
+        record = Question(
+            **data, options=[QuestionOption(**option) for option in options]
         )
-        return db.execute(stmt).scalars().all()
+        db.add(record)
+        return _commit(db, record)
 
     def update(
         self,
         db: Session,
         *,
         db_obj: Question,
-        obj_in: QuestionUpdate,
+        obj_in: QuestionUpdate | dict,
+        actor: User,
     ) -> Question:
-        update_data = obj_in.model_dump(exclude_unset=True)
-        options = update_data.pop("options", None)
-        updated = super().update(db, db_obj=db_obj, obj_in=update_data)
-
+        _require_manager(actor)
+        changes = QuestionUpdate.model_validate(
+            obj_in
+            if isinstance(obj_in, dict)
+            else obj_in.model_dump(exclude_unset=True)
+        ).model_dump(exclude_unset=True)
+        record = self._locked(db, db_obj.id)
+        _authorize_record(db, actor, record)
+        target_track = _track_id(db, _context(record) | changes)
+        _authorize_track(db, actor, target_track)
+        # Moving a bank question must not silently change the ownership of quizzes using it.
+        for link in record.quiz_questions:
+            if _track_id(db, _context(link.quiz)) != target_track:
+                raise ValueError(
+                    "A linked question must remain in the same track as its quizzes."
+                )
+        options = changes.pop("options", None)
+        for field, value in changes.items():
+            setattr(record, field, value)
         if options is not None:
-            updated.options = [QuestionOption(**option) for option in options]
-            db.add(updated)
-            db.commit()
+            record.options = [QuestionOption(**option) for option in options]
+        return _commit(db, record)
 
-        return self._get_with_options(db, question_id=updated.id)  # type: ignore[return-value]
-
-
-class CRUDQuiz(CRUDBase[Quiz, QuizCreate, QuizUpdate]):
-    def _get_with_questions(
+    def get_by_context(
         self,
         db: Session,
         *,
-        quiz_id: int,
-    ) -> Quiz | None:
-        stmt = (
-            select(Quiz)
-            .options(_quiz_questions_query())
-            .where(Quiz.id == quiz_id)
-        )
-        return db.execute(stmt).scalar_one_or_none()
-
-    def get(
-        self,
-        db: Session,
-        id: int,
-    ) -> Quiz | None:
-        return self._get_with_questions(db, quiz_id=id)
-
-    def create(
-        self,
-        db: Session,
-        *,
-        obj_in: QuizCreate,
-    ) -> Quiz:
-        data = obj_in.model_dump()
-        question_links = data.pop("questions", [])
-        db_obj = Quiz(**data)
-        db_obj.question_links = self._build_question_links(db, question_links)
-        db.add(db_obj)
-        db.commit()
-        return self._get_with_questions(db, quiz_id=db_obj.id)  # type: ignore[return-value]
-
-    def update(
-        self,
-        db: Session,
-        *,
-        db_obj: Quiz,
-        obj_in: QuizUpdate,
-    ) -> Quiz:
-        update_data = obj_in.model_dump(exclude_unset=True)
-        question_links = update_data.pop("questions", None)
-        updated = super().update(db, db_obj=db_obj, obj_in=update_data)
-
-        if question_links is not None:
-            updated.question_links = self._build_question_links(
+        actor: User,
+        track_id=None,
+        module_id=None,
+        lesson_id=None,
+        skip=0,
+        limit=100,
+    ) -> Sequence[Question]:
+        _require_manager(actor)
+        if any(value is not None for value in (track_id, module_id, lesson_id)):
+            _authorize_track(
                 db,
-                question_links,
+                actor,
+                _track_id(
+                    db,
+                    {
+                        "track_id": track_id,
+                        "module_id": module_id,
+                        "lesson_id": lesson_id,
+                    },
+                ),
             )
-            db.add(updated)
-            db.commit()
-
-        return self._get_with_questions(db, quiz_id=updated.id)  # type: ignore[return-value]
-
-    def get_multi_by_track(
-        self,
-        db: Session,
-        *,
-        track_id: int,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> Sequence[Quiz]:
-        return self._get_multi_by_scope(
+        allowed = (
+            None
+            if _is_admin(actor)
+            else db.scalars(
+                select(TrackInstructor.track_id).where(
+                    TrackInstructor.instructor_id == actor.id
+                )
+            ).all()
+        )
+        return _get_many(
             db,
-            scope_filter=Quiz.track_id == track_id,
+            Question,
+            track_id=track_id,
+            module_id=module_id,
+            lesson_id=lesson_id,
             skip=skip,
             limit=limit,
+            allowed_tracks=allowed,
+        )
+
+    def get_multi(self, db: Session, *, actor: User, skip=0, limit=100):
+        return self.get_by_context(db, actor=actor, skip=skip, limit=limit)
+
+    def get_multi_by_track(
+        self, db: Session, *, track_id: int, actor: User, skip=0, limit=100
+    ):
+        return self.get_by_context(
+            db, actor=actor, track_id=track_id, skip=skip, limit=limit
+        )
+
+    def get_multi_by_module(
+        self, db: Session, *, module_id: int, actor: User, skip=0, limit=100
+    ):
+        return self.get_by_context(
+            db, actor=actor, module_id=module_id, skip=skip, limit=limit
         )
 
     def get_multi_by_lesson(
+        self, db: Session, *, lesson_id: int, actor: User, skip=0, limit=100
+    ):
+        return self.get_by_context(
+            db, actor=actor, lesson_id=lesson_id, skip=skip, limit=limit
+        )
+
+
+class CRUDQuiz(_CurriculumCRUD):
+    @staticmethod
+    def _validate_links(
+        db: Session, links: list[dict], *, track_id: int | None, actor: User
+    ) -> None:
+        for link in sorted(links, key=lambda item: item["question_id"]):
+            record = db.scalar(
+                select(Question)
+                .where(Question.id == link["question_id"])
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if record is None:
+                raise LookupError(f"Question {link['question_id']} not found")
+            _authorize_record(db, actor, record)
+            if _track_id(db, _context(record)) != track_id:
+                raise ValueError(
+                    "Quiz questions must belong to the same track as the quiz."
+                )
+
+    def create(self, db: Session, *, obj_in: QuizCreate, actor: User) -> Quiz:
+        _require_manager(actor)
+        data = QuizCreate.model_validate(obj_in.model_dump()).model_dump()
+        track_id = _track_id(db, data)
+        _authorize_track(db, actor, track_id)
+        links = data.pop("questions")
+        self._validate_links(db, links, track_id=track_id, actor=actor)
+        record = Quiz(**data, question_links=[QuizQuestion(**link) for link in links])
+        db.add(record)
+        return _commit(db, record)
+
+    def update(
+        self, db: Session, *, db_obj: Quiz, obj_in: QuizUpdate | dict, actor: User
+    ) -> Quiz:
+        _require_manager(actor)
+        changes = QuizUpdate.model_validate(
+            obj_in
+            if isinstance(obj_in, dict)
+            else obj_in.model_dump(exclude_unset=True)
+        ).model_dump(exclude_unset=True)
+        record = self._locked(db, db_obj.id)
+        _authorize_record(db, actor, record)
+        track_id = _track_id(db, _context(record) | changes)
+        _authorize_track(db, actor, track_id)
+        links = changes.pop("questions", None)
+        effective_links = (
+            links
+            if links is not None
+            else [
+                {"question_id": link.question_id, "ordering": link.ordering}
+                for link in record.question_links
+            ]
+        )
+        self._validate_links(db, effective_links, track_id=track_id, actor=actor)
+        for field, value in changes.items():
+            setattr(record, field, value)
+        if links is not None:
+            existing = {link.question_id: link for link in record.question_links}
+            updated = []
+            for values in links:
+                link = existing.get(values["question_id"])
+                if link is None:
+                    link = QuizQuestion(**values)
+                else:
+                    link.ordering = values["ordering"]
+                updated.append(link)
+            record.question_links = updated
+        return _commit(db, record)
+
+    def get_by_context(
         self,
         db: Session,
         *,
-        lesson_id: int,
-        skip: int = 0,
-        limit: int = 100,
+        track_id=None,
+        module_id=None,
+        lesson_id=None,
+        skip=0,
+        limit=100,
+        active_only=False,
+        allowed_track_ids=None,
     ) -> Sequence[Quiz]:
-        return self._get_multi_by_scope(
+        """Internal discovery query; API responses omit correct answers."""
+        return _get_many(
             db,
-            scope_filter=Quiz.lesson_id == lesson_id,
+            Quiz,
+            track_id=track_id,
+            module_id=module_id,
+            lesson_id=lesson_id,
             skip=skip,
             limit=limit,
+            active_only=active_only,
+            allowed_tracks=allowed_track_ids,
         )
 
-    def _get_multi_by_scope(
-        self,
-        db: Session,
-        *,
-        scope_filter: Any,
-        skip: int,
-        limit: int,
-    ) -> Sequence[Quiz]:
-        stmt = (
-            select(Quiz)
-            .options(_quiz_questions_query())
-            .where(scope_filter)
-            .order_by(Quiz.id)
-            .offset(skip)
-            .limit(limit)
-        )
-        return db.execute(stmt).scalars().all()
+    def get_multi(self, db: Session, *, skip=0, limit=100):
+        return self.get_by_context(db, skip=skip, limit=limit)
 
-    @staticmethod
-    def _build_question_links(
-        db: Session,
-        question_links: list[QuizQuestionCreate | dict[str, Any]],
-    ) -> list[QuizQuestion]:
-        links = []
-        for link_data in question_links:
-            link = (
-                link_data
-                if isinstance(link_data, QuizQuestionCreate)
-                else QuizQuestionCreate.model_validate(link_data)
-            )
-            if db.get(Question, link.question_id) is None:
-                raise ValueError(f"Question {link.question_id} was not found")
-            links.append(
-                QuizQuestion(
-                    question_id=link.question_id,
-                    ordering=link.ordering,
-                )
-            )
-        return links
+    def get_multi_by_track(self, db: Session, *, track_id: int, skip=0, limit=100):
+        return self.get_by_context(db, track_id=track_id, skip=skip, limit=limit)
+
+    def get_multi_by_module(self, db: Session, *, module_id: int, skip=0, limit=100):
+        return self.get_by_context(db, module_id=module_id, skip=skip, limit=limit)
+
+    def get_multi_by_lesson(self, db: Session, *, lesson_id: int, skip=0, limit=100):
+        return self.get_by_context(db, lesson_id=lesson_id, skip=skip, limit=limit)
 
 
 question = CRUDQuestion(Question)
 quiz = CRUDQuiz(Quiz)
-
-
-def create_question(db: Session, obj_in: QuestionCreate) -> Question:
-    return question.create(db, obj_in=obj_in)
-
-
-def get_question(db: Session, question_id: int) -> Question | None:
-    return question.get(db, id=question_id)
-
-
-def get_questions_by_track(
-    db: Session,
-    track_id: int,
-    skip: int = 0,
-    limit: int = 100,
-) -> Sequence[Question]:
-    return question.get_multi_by_track(
-        db,
-        track_id=track_id,
-        skip=skip,
-        limit=limit,
-    )
-
-
-def get_questions_by_lesson(
-    db: Session,
-    lesson_id: int,
-    skip: int = 0,
-    limit: int = 100,
-) -> Sequence[Question]:
-    return question.get_multi_by_lesson(
-        db,
-        lesson_id=lesson_id,
-        skip=skip,
-        limit=limit,
-    )
-
-
-def update_question(
-    db: Session,
-    db_obj: Question,
-    obj_in: QuestionUpdate,
-) -> Question:
-    return question.update(db, db_obj=db_obj, obj_in=obj_in)
-
-
-def delete_question(db: Session, question_id: int) -> Question | None:
-    return question.remove(db, id=question_id)
-
-
-def create_quiz(db: Session, obj_in: QuizCreate) -> Quiz:
-    return quiz.create(db, obj_in=obj_in)
-
-
-def get_quiz(db: Session, quiz_id: int) -> Quiz | None:
-    return quiz.get(db, id=quiz_id)
-
-
-def update_quiz(db: Session, db_obj: Quiz, obj_in: QuizUpdate) -> Quiz:
-    return quiz.update(db, db_obj=db_obj, obj_in=obj_in)
-
-
-def delete_quiz(db: Session, quiz_id: int) -> Quiz | None:
-    return quiz.remove(db, id=quiz_id)

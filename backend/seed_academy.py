@@ -5,6 +5,7 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app.db.session import SessionLocal
+from app.core.pricing import BACKEND_AI_TRACK_PRICE_EGP
 from app.models.track import Track
 
 def seed_data():
@@ -16,7 +17,7 @@ def seed_data():
                 slug="backend-ai-engineering",
                 description="مسار متكامل من الصفر للاحتراف. تعلم بناء أنظمة قوية باستخدام Python و FastAPI و PostgreSQL، مع دمج نماذج الذكاء الاصطناعي (RAG) وتصميم قواعد البيانات المتقدمة.",
                 is_premium=True,
-                price=1500,
+                price=BACKEND_AI_TRACK_PRICE_EGP,
                 currency="EGP"
             ),
             Track(
@@ -59,6 +60,10 @@ def seed_data():
             if not existing:
                 db.add(t)
                 print(f"✅ تم إضافة مسار: {t.name}")
+            elif t.slug == "backend-ai-engineering":
+                existing.price = BACKEND_AI_TRACK_PRICE_EGP
+                existing.currency = "EGP"
+                existing.is_premium = True
         
         db.commit()
         print("🚀 تم زرع الأكاديمية بالمسارات بنجاح!")

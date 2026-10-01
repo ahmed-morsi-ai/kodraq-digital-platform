@@ -2,12 +2,29 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated
+
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveInt,
+    StrictBool,
+    field_validator,
+)
+
+PositiveValue = Annotated[int, Field(strict=True, ge=1, le=2**31 - 1)]
+Ordering = Annotated[int, Field(strict=True, ge=0, le=2**31 - 1)]
+Percentage = Annotated[int, Field(strict=True, ge=0, le=100)]
 
 
-class QuestionOptionBase(BaseModel):
-    text: str
-    is_correct: bool = False
+class QuizInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+class QuestionOptionBase(QuizInput):
+    text: str = Field(min_length=1)
+    is_correct: StrictBool = False
 
 
 class QuestionOptionCreate(QuestionOptionBase):
@@ -21,28 +38,38 @@ class QuestionOptionResponse(QuestionOptionBase):
     question_id: int
 
 
-class QuestionBase(BaseModel):
-    difficulty: int = 1
-    text: str
-    question_type: str
-    points: int = 1
+class QuestionBase(QuizInput):
+    difficulty: PositiveValue = 1
+    text: str = Field(min_length=1)
+    question_type: str = Field(min_length=1, max_length=32)
+    points: PositiveValue = 1
     explanation: str | None = None
-    track_id: int | None = None
-    lesson_id: int | None = None
+    track_id: PositiveInt | None = None
+    module_id: PositiveInt | None = None
+    lesson_id: PositiveInt | None = None
 
 
 class QuestionCreate(QuestionBase):
     options: list[QuestionOptionCreate] = Field(default_factory=list)
 
 
-class QuestionUpdate(BaseModel):
-    text: str | None = None
-    question_type: str | None = None
-    points: int | None = None
+class QuestionUpdate(QuizInput):
+    difficulty: PositiveValue | None = None
+    text: str | None = Field(default=None, min_length=1)
+    question_type: str | None = Field(default=None, min_length=1, max_length=32)
+    points: PositiveValue | None = None
     explanation: str | None = None
-    track_id: int | None = None
-    lesson_id: int | None = None
+    track_id: PositiveInt | None = None
+    module_id: PositiveInt | None = None
+    lesson_id: PositiveInt | None = None
     options: list[QuestionOptionCreate] | None = None
+
+    @field_validator("text", "question_type", "difficulty", "points", "options")
+    @classmethod
+    def reject_null(cls, value):
+        if value is None:
+            raise ValueError("This field cannot be null")
+        return value
 
 
 class QuestionResponse(QuestionBase):
@@ -54,9 +81,9 @@ class QuestionResponse(QuestionBase):
     options: list[QuestionOptionResponse] = Field(default_factory=list)
 
 
-class QuizQuestionBase(BaseModel):
-    question_id: int
-    ordering: int = 0
+class QuizQuestionBase(QuizInput):
+    question_id: PositiveInt
+    ordering: Ordering = 0
 
 
 class QuizQuestionCreate(QuizQuestionBase):
@@ -69,29 +96,54 @@ class QuizQuestionResponse(QuizQuestionBase):
     question: QuestionResponse
 
 
-class QuizBase(BaseModel):
-    title: str
+class QuizBase(QuizInput):
+    title: str = Field(min_length=1, max_length=255)
     description: str | None = None
-    track_id: int | None = None
-    lesson_id: int | None = None
-    passing_score: int
-    time_limit_minutes: int | None = None
-    is_active: bool = True
+    track_id: PositiveInt | None = None
+    module_id: PositiveInt | None = None
+    lesson_id: PositiveInt | None = None
+    passing_score: Percentage
+    time_limit_minutes: PositiveValue | None = None
+    is_active: StrictBool = True
+
+
+def unique_questions(questions):
+    if len({link.question_id for link in questions}) != len(questions):
+        raise ValueError("A question may only appear once in a quiz")
+    return questions
 
 
 class QuizCreate(QuizBase):
     questions: list[QuizQuestionCreate] = Field(default_factory=list)
 
+    @field_validator("questions")
+    @classmethod
+    def validate_questions(cls, value):
+        return unique_questions(value)
 
-class QuizUpdate(BaseModel):
-    title: str | None = None
+
+class QuizUpdate(QuizInput):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
-    track_id: int | None = None
-    lesson_id: int | None = None
-    passing_score: int | None = None
-    time_limit_minutes: int | None = None
-    is_active: bool | None = None
+    track_id: PositiveInt | None = None
+    module_id: PositiveInt | None = None
+    lesson_id: PositiveInt | None = None
+    passing_score: Percentage | None = None
+    time_limit_minutes: PositiveValue | None = None
+    is_active: StrictBool | None = None
     questions: list[QuizQuestionCreate] | None = None
+
+    @field_validator("title", "passing_score", "is_active", "questions")
+    @classmethod
+    def reject_null(cls, value):
+        if value is None:
+            raise ValueError("This field cannot be null")
+        return value
+
+    @field_validator("questions")
+    @classmethod
+    def validate_questions(cls, value):
+        return unique_questions(value)
 
 
 class QuizResponse(QuizBase):
@@ -121,9 +173,7 @@ class StudentQuestionResponse(BaseModel):
     text: str
     question_type: str
     points: int
-    options: list[StudentQuestionOptionResponse] = Field(
-        default_factory=list
-    )
+    options: list[StudentQuestionOptionResponse] = Field(default_factory=list)
 
 
 class StudentQuizQuestionResponse(BaseModel):
@@ -140,8 +190,9 @@ class StudentQuizResponse(BaseModel):
     id: int
     title: str
     description: str | None = None
-    track_id: int | None = None
-    lesson_id: int | None = None
+    track_id: PositiveInt | None = None
+    module_id: PositiveInt | None = None
+    lesson_id: PositiveInt | None = None
     passing_score: int
     time_limit_minutes: int | None = None
     is_active: bool
@@ -169,11 +220,10 @@ class QuizResultResponse(BaseModel):
     quiz_id: int
     score: float
     max_score: int
+    earned_points: int
     percentage: float
     passed: bool
     time_taken_seconds: float
     is_flagged: bool
     flag_reason: str | None = None
-    questions: list[QuizResultQuestionResponse] = Field(
-        default_factory=list
-    )
+    questions: list[QuizResultQuestionResponse] = Field(default_factory=list)

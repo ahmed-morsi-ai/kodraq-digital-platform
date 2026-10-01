@@ -74,9 +74,8 @@ def create_enrollment(
             detail="Track not found.",
         )
 
-    target_status = "pending_payment" if track.is_premium else "active"
     enrollment_payload = enrollment_in.model_copy(
-        update={"status": target_status},
+        update={"status": "pending"},
     )
     track = crud_track.get(
         session,

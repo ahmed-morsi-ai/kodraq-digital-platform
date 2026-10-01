@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime
 from uuid import UUID
@@ -12,7 +12,7 @@ class SubmissionFileResponse(BaseModel):
     id: UUID
     submission_id: int
     file_name: str
-    file_path: str
-    file_size_bytes: int = Field(validation_alias="file_size")
-    content_type: str
+    file_url: str
+    file_size_bytes: int | None = Field(validation_alias="file_size")
+    file_type: str
     created_at: datetime

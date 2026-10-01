@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from app.crud.base import CRUDBase
 from app.crud.crud_assignment import (
@@ -16,57 +16,24 @@ from app.crud.crud_enrollment import (
     enrollment,
     student_progress,
 )
-from app.crud.crud_graduation import (
-    CRUDGraduationEvaluation,
-    evaluate_graduation,
-    get_graduation_evaluation,
-    get_latest_graduation_evaluation,
-    graduation_evaluation,
-)
 from app.crud.crud_project_submission import (
     CRUDProjectSubmission,
-    create_project_submission,
-    get_project_submission,
-    get_project_submissions_by_project,
-    get_project_submissions_by_user,
     project_submission,
-    review_project_submission,
-    update_project_submission,
 )
 from app.crud.crud_quiz import (
     CRUDQuestion,
     CRUDQuiz,
-    create_question,
-    create_quiz,
-    delete_question,
-    delete_quiz,
-    get_question,
-    get_questions_by_lesson,
-    get_questions_by_track,
-    get_quiz,
     question,
     quiz,
-    update_question,
-    update_quiz,
 )
 from app.crud.crud_quiz_attempt import (
     CRUDQuizAttempt,
-    create_quiz_attempt,
-    get_quiz_attempt,
-    get_quiz_attempts_by_quiz,
     quiz_attempt,
-    submit_quiz_attempt,
 )
 from app.crud.crud_role import role
 from app.crud.crud_submission import (
     CRUDSubmission,
-    create_submission,
-    get_submission,
-    get_submissions_by_assignment,
-    get_submissions_by_user,
-    review_submission,
     submission,
-    update_submission,
 )
 from app.crud.crud_track import (
     CRUDLesson,
@@ -89,7 +56,6 @@ __all__ = [
     "CRUDResource",
     "CRUDEnrollment",
     "CRUDStudentProgress",
-    "CRUDGraduationEvaluation",
     "CRUDSubmission",
     "track",
     "track_module",
@@ -97,10 +63,6 @@ __all__ = [
     "resource",
     "enrollment",
     "student_progress",
-    "graduation_evaluation",
-    "evaluate_graduation",
-    "get_graduation_evaluation",
-    "get_latest_graduation_evaluation",
     "assignment",
     "create_assignment",
     "get_assignment",
@@ -108,40 +70,14 @@ __all__ = [
     "update_assignment",
     "delete_assignment",
     "submission",
-    "create_submission",
-    "get_submission",
-    "get_submissions_by_user",
-    "get_submissions_by_assignment",
-    "update_submission",
-    "review_submission",
     "CRUDQuestion",
     "CRUDQuiz",
     "question",
     "quiz",
-    "create_question",
-    "get_question",
-    "get_questions_by_track",
-    "get_questions_by_lesson",
-    "update_question",
-    "delete_question",
-    "create_quiz",
-    "get_quiz",
-    "update_quiz",
-    "delete_quiz",
     "CRUDQuizAttempt",
     "quiz_attempt",
-    "create_quiz_attempt",
-    "get_quiz_attempt",
-    "get_quiz_attempts_by_quiz",
-    "submit_quiz_attempt",
     "CRUDProjectSubmission",
     "project_submission",
-    "create_project_submission",
-    "get_project_submission",
-    "get_project_submissions_by_project",
-    "get_project_submissions_by_user",
-    "update_project_submission",
-    "review_project_submission",
     "role",
     "user",
 ]

@@ -1,4 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+
+from datetime import UTC, datetime
 
 from io import BytesIO
 
@@ -7,11 +9,12 @@ import pytest
 from app.core.security import create_access_token
 from app.main import app
 from app.models.assignment import Assignment
+from app.models.enrollment import Enrollment
 from app.models.role import Role
 from app.models.submission import Submission, SubmissionFile, SubmissionStatus
 from app.models.track import Track
 from app.models.user import User
-from app.services.storage import MockStorageService, get_storage_service
+from app.services.storage import LocalStorageService, get_storage_service
 
 
 def _make_user(
@@ -68,6 +71,14 @@ def _make_submission(db_session, user: User, *, status: str = "DRAFT") -> Submis
     db_session.add(assignment)
     db_session.flush()
 
+    db_session.add(
+        Enrollment(
+            user_id=user.id,
+            track_id=track.id,
+            status="active",
+            enrolled_at=datetime.now(UTC),
+        )
+    )
     submission = Submission(
         assignment_id=assignment.id,
         user_id=user.id,
@@ -81,14 +92,15 @@ def _make_submission(db_session, user: User, *, status: str = "DRAFT") -> Submis
 
 
 @pytest.fixture
-def mock_storage(client):
-    storage = MockStorageService()
+def local_storage(client, tmp_path):
+    storage = LocalStorageService(tmp_path)
     app.dependency_overrides[get_storage_service] = lambda: storage
     yield storage
+    app.dependency_overrides.pop(get_storage_service, None)
 
 
-def test_mock_storage_upload_and_delete():
-    storage = MockStorageService()
+def test_local_storage_upload_and_delete(tmp_path):
+    storage = LocalStorageService(tmp_path)
     stored = storage.upload_file(
         file=BytesIO(b"hello"),
         object_key="submissions/1/example.txt",
@@ -96,14 +108,15 @@ def test_mock_storage_upload_and_delete():
     )
 
     assert stored.size_bytes == 5
-    assert storage.objects[stored.object_key] == stored
+    with storage.open_file(object_key=stored.object_key) as stream:
+        assert stream.read() == b"hello"
 
     storage.delete_file(object_key=stored.object_key)
 
-    assert stored.object_key not in storage.objects
+    assert not (storage.root / stored.object_key).exists()
 
 
-def test_owner_can_upload_file(db_session, client, mock_storage):
+def test_owner_can_upload_file(db_session, client, local_storage):
     owner = _make_user(
         db_session,
         email="file-owner@example.com",
@@ -128,10 +141,10 @@ def test_owner_can_upload_file(db_session, client, mock_storage):
     assert len(body) == 1
     assert body[0]["file_name"] == "report.pdf"
     assert body[0]["file_size_bytes"] == 5
-    assert body[0]["content_type"] == "application/pdf"
+    assert body[0]["file_type"] == "application/pdf"
 
-    file_path = body[0]["file_path"]
-    assert file_path in mock_storage.objects
+    file_path = body[0]["file_url"]
+    assert (local_storage.root / file_path).exists()
 
     db_file = db_session.get(SubmissionFile, body[0]["id"])
     assert db_file is not None
@@ -139,7 +152,7 @@ def test_owner_can_upload_file(db_session, client, mock_storage):
     assert db_file.file_size == 5
 
 
-def test_owner_can_upload_multiple_files(db_session, client, mock_storage):
+def test_owner_can_upload_multiple_files(db_session, client, local_storage):
     owner = _make_user(
         db_session,
         email="multi-file-owner@example.com",
@@ -160,10 +173,10 @@ def test_owner_can_upload_multiple_files(db_session, client, mock_storage):
 
     assert len(body) == 2
     assert {item["file_name"] for item in body} == {"one.txt", "two.txt"}
-    assert len(mock_storage.objects) == 2
+    assert len([p for p in local_storage.root.rglob("*") if p.is_file()]) == 2
 
 
-def test_other_student_cannot_upload_file(db_session, client, mock_storage):
+def test_other_student_cannot_upload_file(db_session, client, local_storage):
     owner = _make_user(
         db_session,
         email="upload-owner@example.com",
@@ -187,7 +200,7 @@ def test_other_student_cannot_upload_file(db_session, client, mock_storage):
     )
 
     assert response.status_code == 403
-    assert mock_storage.objects == {}
+    assert not any(p.is_file() for p in local_storage.root.rglob("*"))
 
 
 @pytest.mark.parametrize(
@@ -202,7 +215,7 @@ def test_other_student_cannot_upload_file(db_session, client, mock_storage):
 def test_locked_submission_rejects_upload(
     db_session,
     client,
-    mock_storage,
+    local_storage,
     locked_status,
 ):
     owner = _make_user(
@@ -227,11 +240,11 @@ def test_locked_submission_rejects_upload(
         },
     )
 
-    assert response.status_code == 403
-    assert mock_storage.objects == {}
+    assert response.status_code == 409
+    assert not any(p.is_file() for p in local_storage.root.rglob("*"))
 
 
-def test_owner_can_delete_file(db_session, client, mock_storage):
+def test_owner_can_delete_file(db_session, client, local_storage):
     owner = _make_user(
         db_session,
         email="delete-owner@example.com",
@@ -253,7 +266,7 @@ def test_owner_can_delete_file(db_session, client, mock_storage):
     assert upload_response.status_code == 201
     file_body = upload_response.json()[0]
     file_id = file_body["id"]
-    file_path = file_body["file_path"]
+    file_path = file_body["file_url"]
 
     delete_response = client.delete(
         f"/api/v1/submissions/{submission.id}/files/{file_id}",
@@ -261,11 +274,11 @@ def test_owner_can_delete_file(db_session, client, mock_storage):
     )
 
     assert delete_response.status_code == 204
-    assert file_path not in mock_storage.objects
+    assert not (local_storage.root / file_path).exists()
     assert db_session.get(SubmissionFile, file_id) is None
 
 
-def test_other_student_cannot_delete_file(db_session, client, mock_storage):
+def test_other_student_cannot_delete_file(db_session, client, local_storage):
     owner = _make_user(
         db_session,
         email="delete-owner-2@example.com",
@@ -291,7 +304,7 @@ def test_other_student_cannot_delete_file(db_session, client, mock_storage):
     assert upload_response.status_code == 201
     file_body = upload_response.json()[0]
     file_id = file_body["id"]
-    file_path = file_body["file_path"]
+    file_path = file_body["file_url"]
 
     delete_response = client.delete(
         f"/api/v1/submissions/{submission.id}/files/{file_id}",
@@ -299,7 +312,7 @@ def test_other_student_cannot_delete_file(db_session, client, mock_storage):
     )
 
     assert delete_response.status_code == 403
-    assert file_path in mock_storage.objects
+    assert (local_storage.root / file_path).exists()
     assert db_session.get(SubmissionFile, file_id) is not None
 
 
@@ -315,7 +328,7 @@ def test_other_student_cannot_delete_file(db_session, client, mock_storage):
 def test_locked_submission_rejects_delete(
     db_session,
     client,
-    mock_storage,
+    local_storage,
     locked_status,
 ):
     owner = _make_user(
@@ -339,7 +352,7 @@ def test_locked_submission_rejects_delete(
     assert upload_response.status_code == 201
     file_body = upload_response.json()[0]
     file_id = file_body["id"]
-    file_path = file_body["file_path"]
+    file_path = file_body["file_url"]
 
     submission.status = locked_status
     db_session.commit()
@@ -349,6 +362,6 @@ def test_locked_submission_rejects_delete(
         headers=_auth_headers(owner),
     )
 
-    assert delete_response.status_code == 403
-    assert file_path in mock_storage.objects
+    assert delete_response.status_code == 409
+    assert (local_storage.root / file_path).exists()
     assert db_session.get(SubmissionFile, file_id) is not None

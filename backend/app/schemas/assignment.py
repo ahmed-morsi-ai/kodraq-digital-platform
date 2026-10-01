@@ -3,16 +3,23 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveInt,
+    ValidationInfo,
+    field_validator,
+)
 
 Difficulty = Literal["beginner", "intermediate", "advanced"]
 
 
 class AssignmentBase(BaseModel):
-    track_id: int | None = None
-    module_id: int | None = None
-    lesson_id: int | None = None
-    title: str
+    track_id: PositiveInt | None = None
+    module_id: PositiveInt | None = None
+    lesson_id: PositiveInt | None = None
+    title: str = Field(max_length=255)
     description: str
     instructions: str
     difficulty: Difficulty
@@ -25,14 +32,16 @@ class AssignmentBase(BaseModel):
 
 
 class AssignmentCreate(AssignmentBase):
-    pass
+    model_config = ConfigDict(extra="forbid")
 
 
 class AssignmentUpdate(BaseModel):
-    track_id: int | None = None
-    module_id: int | None = None
-    lesson_id: int | None = None
-    title: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    track_id: PositiveInt | None = None
+    module_id: PositiveInt | None = None
+    lesson_id: PositiveInt | None = None
+    title: str | None = Field(default=None, max_length=255)
     description: str | None = None
     instructions: str | None = None
     difficulty: Difficulty | None = None
@@ -42,6 +51,22 @@ class AssignmentUpdate(BaseModel):
     due_days: int | None = None
     estimated_minutes: int | None = None
     evaluation_config: dict[str, Any] | None = None
+
+    @field_validator(
+        "title",
+        "description",
+        "instructions",
+        "difficulty",
+        "ordering",
+        "is_mandatory",
+        "is_active",
+    )
+    @classmethod
+    def reject_explicit_null(cls, value: Any, info: ValidationInfo) -> Any:
+        # Omitted PATCH fields keep their defaults without running this validator.
+        if value is None:
+            raise ValueError(f"{info.field_name} cannot be null")
+        return value
 
 
 class AssignmentResponse(AssignmentBase):

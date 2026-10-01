@@ -1,14 +1,16 @@
 from app.models.ai import AIRequestLog
 from app.models.assignment import Assignment
 from app.models.base import Base
+from app.models.certificate import Certificate
+from app.models.document import Document, DocumentChunk
 from app.models.enrollment import Enrollment, StudentProgress
 from app.models.final_project import ProjectRequirement, ProjectReview, TrainingProject
 from app.models.graduation import (
-    GraduationEvaluation,
-    GraduationEvaluationStatus,
-    GraduationGateCheck,
+    GraduationCheck,
+    GraduationResult,
+    GraduationRule,
+    GraduationStatus,
 )
-from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
 from app.models.payment import Payment
 from app.models.project_submission import (
     ProjectSubmission,
@@ -58,23 +60,12 @@ __all__ = [
     "ProjectSubmission",
     "ProjectReview",
     "ProjectSubmissionStatus",
-    "GraduationEvaluation",
-    "GraduationGateCheck",
-    "GraduationEvaluationStatus",
-    "KnowledgeDocument",
-    "KnowledgeChunk",
+    "Certificate",
+    "GraduationRule",
+    "GraduationCheck",
+    "GraduationResult",
+    "GraduationStatus",
+    "Document",
+    "DocumentChunk",
     "Payment",
 ]
-
-from app.models.certificate import (
-    Certificate as Certificate,
-)
-from app.models.certificate import (
-    GraduationCheck as GraduationCheck,
-)
-from app.models.certificate import (
-    GraduationResult as GraduationResult,
-)
-from app.models.certificate import (
-    GraduationRule as GraduationRule,
-)
