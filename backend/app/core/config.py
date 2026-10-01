@@ -1,7 +1,9 @@
-from pydantic import AnyHttpUrl, field_validator
+from pydantic import AnyHttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 from pydantic import PositiveInt
+
+_INSECURE_DEFAULT_SECRET_KEY = "super-secret-key-change-in-production-1234567890"
 
 
 class Settings(BaseSettings):
@@ -19,7 +21,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = (
         "postgresql://kodraq_user:kodraq_secure_password@localhost:5432/kodraq_db"
     )
-    SECRET_KEY: str = "super-secret-key-change-in-production-1234567890"
+    SECRET_KEY: str = _INSECURE_DEFAULT_SECRET_KEY
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
     GEMINI_API_KEY: str = ""
     AI_DEFAULT_PROVIDER: str = "gemini"
@@ -44,8 +46,17 @@ class Settings(BaseSettings):
             return v
         raise ValueError(v)
 
+    @model_validator(mode="after")
+    def require_production_secret(self) -> "Settings":
+        if not self.DEBUG and self.SECRET_KEY == _INSECURE_DEFAULT_SECRET_KEY:
+            raise ValueError("SECRET_KEY must be configured when DEBUG is false")
+        return self
+
     model_config = SettingsConfigDict(
-        env_file=".env", case_sensitive=True, extra="ignore"
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore",
+        hide_input_in_errors=True,
     )
 
 

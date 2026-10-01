@@ -1,21 +1,25 @@
 from __future__ import annotations
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.models.user import User
-from app.models.track import Track, TrackModule, Lesson, Resource
-from app.models.enrollment import Enrollment
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres.iypwblpjhmdjhspcuthl:morsi2007@AHMED@aws-1-eu-west-1.pooler.supabase.com:5432/postgres")
+load_dotenv(Path(__file__).with_name(".env"))
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL must be set before resetting and seeding.")
+
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def reset_and_seed():
+    from app.models.enrollment import Enrollment
+    from app.models.track import Lesson, Resource, Track, TrackModule
+    from app.models.user import User
+
     db = SessionLocal()
     try:
         print("🧹 Cleaning existing database (users, enrollments, tracks, modules)...")
