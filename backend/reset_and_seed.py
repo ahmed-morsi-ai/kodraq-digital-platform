@@ -364,7 +364,7 @@ app.include_router(users.router)
 - قسّم تطبيقك باستخدام `APIRouter` لضمان قابلية التوسع والصيانة الدورية للمشروع.
 """,
                 "ordering": 2,
-                "video_url": "https://www.youtube.com/embed/7t2alSnE2rI",
+                "video_url": "https://www.youtube.com/embed/iWS9ogMPOI0",
             },
             {
                 "title": "التحقق من البيانات باستخدام Pydantic V2",
@@ -372,7 +372,7 @@ app.include_router(users.router)
                 "content": """
 ### 1. ثورة Pydantic V2: لماذا تمت إعادة كتابته بلغة Rust؟
 
-في الإصدار الثاني (V2)، انتقل **Pydantic** من كونه مجرد مكتبة جيدة للتحقق من البيانات إلى "وحش أداء" حقيقي. تم استبدال المحرك الداخلي (Core) بمحرك مكتوب بلغة **Rust** (`pydantic-core`)، مما أدى إلى زيادة سرعة التحقق من البيانات (Validation) بمقدار **5 إلى 50 ضعفاً** مقارنة بـ V1.
+في الإصدار الثاني (V2)، انتقل **Pydantic** إلى محرك تحقق وتسلسل مكتوب بلغة **Rust** اسمه `pydantic-core`. يبني Pydantic مخططاً داخلياً للحقول والقيود، ثم ينفذ المحرك التحقق والتحويل بكفاءة؛ وتشير المقارنات المنشورة إلى تحسن قد يصل إلى **5 إلى 50 ضعفاً** في بعض الحالات، بينما تعتمد النتيجة الفعلية على شكل البيانات والنموذج وطريقة القياس.
 
 **دور Pydantic في المعمارية:**
 يعمل Pydantic كحارس بوابة (Gatekeeper) صارم بين العالم الخارجي (طلبات المستخدمين) وعالمك الداخلي (قاعدة البيانات والمنطق البرمجي). لا توجد بيانات تدخل نظامك أو تخرج منه دون المرور على فلاتر Pydantic.
@@ -404,7 +404,7 @@ class UserRegistration(BaseModel):
 
 ### 3. عمليات التحقق المتقدمة (Custom Validators)
 
-ماذا لو أردنا التحقق من منطق معقد لا يمكن لـ `Field` تغطيته؟ هنا نستخدم `@field_validator` (للتحقق من حقل واحد) و `@model_validator` (للتحقق من عدة حقول معاً).
+ماذا لو أردنا التحقق من منطق معقد لا يمكن لـ `Field` تغطيته؟ هنا نستخدم `@field_validator` للتحقق من قيمة حقل واحد، و `@model_validator` لقواعد تعتمد على النموذج أو أكثر من حقل. يدعم `@field_validator` أوضاع `before` و `after` و `plain` و `wrap`؛ أما `@model_validator` فيستخدم `before` لفحص مدخلات النموذج الخام، و `after` للتحقق من النموذج بعد تحليل حقوله. ارفع `ValueError` عند مخالفة القاعدة ليحوّلها Pydantic إلى خطأ تحقق منظم.
 
 ```python
 from pydantic import BaseModel, field_validator, model_validator
@@ -474,7 +474,7 @@ async def register(user: UserRegistration):
 - **احذر من `model_dump()` العشوائي:** استخدم خيارات مثل `exclude` لمنع تسريب بيانات حساسة (مثل كلمات المرور) في ردود السيرفر.
 """,
                 "ordering": 3,
-                "video_url": "https://www.youtube.com/embed/Vj-iU-8_xLs",
+                "video_url": "https://www.youtube.com/embed/7aBRk_JP-qY",
             },
         ],
     },
