@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { isAxiosError } from "axios";
 import {
   AlertCircle,
@@ -22,12 +22,8 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/AuthContext";
 import { paymentService } from "@/services/payment.service";
 import type { Enrollment } from "@/types/enrollment";
-import {
-  DEFAULT_PAYMENT_INSTRUCTIONS,
-  type Payment,
-  type PaymentInstructions,
-  type PaymentMethod,
-} from "@/types/payment";
+import type { Payment } from "@/types/payment";
+import type { PaymentMethod } from "@/types/payment";
 import type { Track } from "@/types/track";
 
 interface PaymentCheckoutProps {
@@ -63,7 +59,7 @@ function getErrorMessage(error: unknown): string {
 
 export default function PaymentCheckout({ track, enrollment, onClose, onSuccess }: PaymentCheckoutProps) {
   const { user } = useAuth();
-  const [instructions, setInstructions] = useState<PaymentInstructions>(DEFAULT_PAYMENT_INSTRUCTIONS);
+  const [method, setMethod] = useState<PaymentMethod>("VODAFONE_CASH");
   const [transferReference, setTransferReference] = useState("");
   const [receipt, setReceipt] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -71,33 +67,32 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
   const [payment, setPayment] = useState<Payment | null>(null);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    void paymentService.getInstructions()
-      .then((result) => {
-        if (active) setInstructions({ ...DEFAULT_PAYMENT_INSTRUCTIONS, ...result });
-      })
-      .catch(() => {
-        if (active) setInstructions(DEFAULT_PAYMENT_INSTRUCTIONS);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
   const amount = Number(track.price ?? 0);
   const formattedAmount = new Intl.NumberFormat("en-EG", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount);
   const currency = track.currency || "EGP";
-  const method: PaymentMethod = "VODAFONE_CASH";
   const isAlreadyEnrolled = enrollment?.status === "active" || enrollment?.status === "completed";
 
   if (!track.is_premium || isAlreadyEnrolled) return null;
 
-  const paymentAccount = instructions.vodafone_cash;
-  const transferInstructions = instructions.vodafone_cash_instructions;
+  const paymentOptions: { method: PaymentMethod; label: string; instructions: string }[] = [
+    {
+      method: "VODAFONE_CASH",
+      label: "محفظة إلكترونية",
+      instructions: "قم بالتحويل إلى المحفظة الإلكترونية للرقم أعلاه (متاح الاستقبال من أي محفظة إلكترونية)، ثم أدخل رقم الموبايل المحول منه وأرفق صورة الإيصال.",
+    },
+    {
+      method: "INSTAPAY",
+      label: "InstaPay",
+      instructions: "قم بالتحويل عبر تطبيق انستاباي إلى رقم المحفظة أعلاه، ثم أدخل رقم الهواتف/مرجع التحويل وأرفق الإيصال.",
+    },
+  ];
+  const selectedPaymentOption = paymentOptions.find((option) => option.method === method)!;
+  const paymentMethod = selectedPaymentOption.label;
+  const paymentAccount = "01140225360";
+  const transferInstructions = selectedPaymentOption.instructions;
 
   const copyAccount = async () => {
     if (!paymentAccount) return;
@@ -123,9 +118,7 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
     }
 
     setIsSubmitting(true);
-    let whatsappWindow: Window | null = null;
     try {
-      whatsappWindow = window.open("about:blank", "_blank");
       const createdPayment = await paymentService.submitPayment(
         track.id,
         method,
@@ -134,16 +127,11 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
       );
       setPayment(createdPayment);
       const targetPhone = "201140225360";
-      const textMessage = `مرحباً Kodraq Digital 🚀\n\nأود تفعيل اشتراكي في مسار: ${track.name}\n\nبيانات الحساب:\n- الاسم: ${user?.full_name || "طالب"}\n- البريد: ${user?.email || ""}\n- وسيلة الدفع: Vodafone Cash\n- رقم/مرجع التحويل: ${transferReference}\n\n(مرفق صورة إيصال التحويل لتفعيل الاشتراك)`;
+      const textMessage = `مرحباً Kodraq Digital 🚀\n\nأود تفعيل اشتراكي في مسار: ${track.name}\n\nبيانات الحساب:\n- الاسم: ${user?.full_name || "طالب"}\n- البريد: ${user?.email || ""}\n- وسيلة الدفع: ${paymentMethod}\n- مرجع التحويل: ${transferReference}\n\n(مرفق صورة إيصال التحويل)`;
       const whatsappUrl = `https://wa.me/${targetPhone}?text=${encodeURIComponent(textMessage)}`;
-      if (whatsappWindow) {
-        whatsappWindow.location.href = whatsappUrl;
-      } else {
-        window.location.assign(whatsappUrl);
-      }
+      window.open(whatsappUrl, "_blank");
       onSuccess?.();
     } catch (requestError) {
-      whatsappWindow?.close();
       console.error("Payment proof submission failed", requestError);
       setError(getErrorMessage(requestError));
     } finally {
@@ -221,9 +209,19 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
 
               <fieldset className="space-y-2">
                 <legend className="text-xs font-bold text-slate-700">وسيلة الدفع</legend>
-                <div className="flex min-h-16 items-center gap-3 rounded-lg border border-sky-600 bg-sky-50 px-4 text-sm font-semibold text-sky-900">
-                  <Smartphone aria-hidden="true" className="size-5" />
-                  Vodafone Cash
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {paymentOptions.map((option) => (
+                    <button
+                      key={option.method}
+                      type="button"
+                      aria-pressed={method === option.method}
+                      onClick={() => setMethod(option.method)}
+                      className={`flex min-h-16 items-center gap-3 rounded-lg border px-4 text-sm font-semibold ${method === option.method ? "border-sky-600 bg-sky-50 text-sky-900" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"}`}
+                    >
+                      <Smartphone aria-hidden="true" className="size-5" />
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
               </fieldset>
 
