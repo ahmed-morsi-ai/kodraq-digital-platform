@@ -61,6 +61,12 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
   const { user } = useAuth();
   const [method, setMethod] = useState<PaymentMethod>("VODAFONE_CASH");
   const [transferReference, setTransferReference] = useState("");
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
+  const [couponFeedback, setCouponFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
   const [receipt, setReceipt] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,10 +74,14 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
   const [copied, setCopied] = useState(false);
 
   const amount = Number(track.price ?? 0);
-  const formattedAmount = new Intl.NumberFormat("en-EG", {
+  const discountAmount = appliedCoupon
+    ? Math.round((amount * 0.1 + Number.EPSILON) * 100) / 100
+    : 0;
+  const finalAmount = Math.max(0, amount - discountAmount);
+  const formatAmount = (value: number) => new Intl.NumberFormat("en-EG", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  }).format(amount);
+  }).format(value);
   const currency = track.currency || "EGP";
   const isAlreadyEnrolled = enrollment?.status === "active" || enrollment?.status === "completed";
 
@@ -93,6 +103,18 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
   const paymentMethod = selectedPaymentOption.label;
   const paymentAccount = "01140225360";
   const transferInstructions = selectedPaymentOption.instructions;
+
+  const applyCoupon = () => {
+    if (couponCode.trim().toLowerCase() !== "sdk-10") {
+      setAppliedCoupon(null);
+      setCouponFeedback({ type: "error", message: "كود الخصم غير صالح." });
+      return;
+    }
+
+    setAppliedCoupon("sdk-10");
+    setCouponFeedback({ type: "success", message: "تم تطبيق خصم 10% بنجاح." });
+    setError(null);
+  };
 
   const copyAccount = async () => {
     if (!paymentAccount) return;
@@ -124,6 +146,7 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
         method,
         receipt,
         transferReference,
+        appliedCoupon ?? undefined,
       );
       setPayment(createdPayment);
       const targetPhone = "201140225360";
@@ -158,7 +181,7 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
         <p>تنبيه هام: يُغلق باب التسجيل رسمياً يوم الإثنين 05/10/2026، ولن يُفتح باب الانضمام للمسار مرة أخرى إلا بعد 6 أشهر كاملة.</p>
       </div>
 
-      <div className="grid lg:grid-cols-[1.05fr_0.95fr]">
+      <form onSubmit={(event) => void submitPayment(event)} className="grid lg:grid-cols-[1.05fr_0.95fr]">
         <div className="space-y-6 p-5 sm:p-7">
           <div>
             <p className="flex items-center gap-2 text-xs font-bold uppercase text-sky-700">
@@ -188,9 +211,54 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
           </ul>
 
           <div className="flex items-end justify-between gap-3 border-t border-slate-200 pt-5">
-            <div><p className="text-xs font-semibold text-slate-500">رسوم المسار</p><p className="mt-1 text-3xl font-extrabold tabular-nums text-slate-950">{currency} {formattedAmount}</p></div>
+            <div>
+              <p className="text-xs font-semibold text-slate-500">رسوم المسار</p>
+              {appliedCoupon && <p className="mt-1 text-sm tabular-nums text-slate-600">السعر الأساسي: {currency} {formatAmount(amount)}</p>}
+              {appliedCoupon && <p className="text-sm tabular-nums font-semibold text-emerald-700">خصم 10%: −{currency} {formatAmount(discountAmount)}</p>}
+              <p className="mt-1 text-3xl font-extrabold tabular-nums text-slate-950">{currency} {formatAmount(finalAmount)}</p>
+            </div>
             <span className="mb-1 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><ShieldCheck aria-hidden="true" className="size-4" /> دفع آمن ومراجعة يدوية</span>
           </div>
+
+          {!payment && (
+            <div className="space-y-2">
+              <Label htmlFor="coupon-code" className="text-xs font-bold text-slate-700">كود الخصم</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="coupon-code"
+                  name="coupon_code"
+                  value={couponCode}
+                  onChange={(event) => {
+                    setCouponCode(event.target.value);
+                    setAppliedCoupon(null);
+                    setCouponFeedback(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      applyCoupon();
+                    }
+                  }}
+                  placeholder="أدخل كود الخصم"
+                  dir="ltr"
+                  className="h-11 border-slate-300 bg-white"
+                  aria-describedby={couponFeedback ? "coupon-feedback" : undefined}
+                />
+                <Button type="button" variant="outline" onClick={applyCoupon} className="h-11 shrink-0">
+                  تطبيق
+                </Button>
+              </div>
+              {couponFeedback && (
+                <p
+                  id="coupon-feedback"
+                  role={couponFeedback.type === "error" ? "alert" : "status"}
+                  className={`text-xs leading-5 ${couponFeedback.type === "success" ? "text-emerald-700" : "text-rose-700"}`}
+                >
+                  {couponFeedback.message}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="border-t border-slate-200 bg-slate-50 p-5 sm:p-7 lg:border-r lg:border-t-0">
@@ -201,7 +269,7 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
               <p className="mt-2 max-w-sm text-sm leading-6 text-slate-600">تم إرسال الإيصال للمراجعة. رقم الطلب <span className="font-mono font-bold">#{payment.id}</span>. سيظهر تفعيل الاشتراك بعد اعتماد الدفع.</p>
             </div>
           ) : (
-            <form onSubmit={(event) => void submitPayment(event)} className="space-y-5">
+            <div className="space-y-5">
               <div>
                 <h3 className="flex items-center gap-2 text-base font-bold text-slate-950"><CreditCard aria-hidden="true" className="size-5 text-sky-700" /> إتمام الدفع</h3>
                 <p className="mt-1 text-xs leading-5 text-slate-600">اختر وسيلة الدفع، ثم أدخل مرجع التحويل وأرفق صورة الإيصال.</p>
@@ -261,10 +329,10 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
                 {isSubmitting ? "جارٍ إرسال طلبك..." : "احجز مقعدك الآن قبل إغلاق التسجيل 🚀"}
               </Button>
               <p className="text-center text-[11px] leading-5 text-slate-500">سيُراجع الإيصال يدوياً، ثم يتحدث اشتراكك بعد اعتماد الدفع.</p>
-            </form>
+            </div>
           )}
         </div>
-      </div>
+      </form>
     </section>
   );
 }

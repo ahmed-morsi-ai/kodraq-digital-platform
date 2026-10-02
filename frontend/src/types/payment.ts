@@ -38,6 +38,13 @@ export interface Payment {
   updated_at: string;
 }
 
+export interface PaymentCreatePayload {
+  track_id: number;
+  payment_method: PaymentMethod;
+  transfer_reference: string;
+  coupon_code?: string;
+}
+
 export interface PaymentVerificationPayload {
   status: "VERIFIED" | "REJECTED";
   rejection_reason?: string | null;

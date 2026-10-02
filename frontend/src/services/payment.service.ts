@@ -1,6 +1,7 @@
 import { api } from "./api";
 import type {
   Payment,
+  PaymentCreatePayload,
   PaymentInstructions,
   PaymentMethod,
   PaymentVerificationPayload,
@@ -17,11 +18,21 @@ export const paymentService = {
     method: PaymentMethod,
     receiptFile: File | null,
     transferReference: string,
+    couponCode?: string,
   ): Promise<Payment> {
     const formData = new FormData();
-    formData.append("track_id", String(trackId));
-    formData.append("payment_method", method);
-    formData.append("transfer_reference", transferReference.trim());
+    const payload: PaymentCreatePayload = {
+      track_id: trackId,
+      payment_method: method,
+      transfer_reference: transferReference.trim(),
+      ...(couponCode ? { coupon_code: couponCode } : {}),
+    };
+    formData.append("track_id", String(payload.track_id));
+    formData.append("payment_method", payload.payment_method);
+    formData.append("transfer_reference", payload.transfer_reference);
+    if (payload.coupon_code) {
+      formData.append("coupon_code", payload.coupon_code);
+    }
     if (receiptFile) {
       formData.append("file", receiptFile);
     }
