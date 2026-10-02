@@ -7,13 +7,11 @@ import {
   CheckCircle2,
   Copy,
   CreditCard,
-  Landmark,
   Loader2,
   ShieldCheck,
   Smartphone,
   Sparkles,
   Upload,
-  Wallet,
   Wrench,
   X,
 } from "lucide-react";
@@ -21,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/context/AuthContext";
 import { paymentService } from "@/services/payment.service";
 import type { Enrollment } from "@/types/enrollment";
 import {
@@ -37,16 +36,6 @@ interface PaymentCheckoutProps {
   onClose?: () => void;
   onSuccess?: () => void;
 }
-
-const PAYMENT_METHODS: {
-  value: PaymentMethod;
-  label: string;
-  icon: typeof Wallet;
-}[] = [
-  { value: "INSTAPAY", label: "InstaPay", icon: Wallet },
-  { value: "VODAFONE_CASH", label: "Vodafone Cash", icon: Smartphone },
-  { value: "BANK_TRANSFER", label: "تحويل بنكي", icon: Landmark },
-];
 
 function getErrorMessage(error: unknown): string {
   if (isAxiosError(error)) {
@@ -73,8 +62,8 @@ function getErrorMessage(error: unknown): string {
 }
 
 export default function PaymentCheckout({ track, enrollment, onClose, onSuccess }: PaymentCheckoutProps) {
+  const { user } = useAuth();
   const [instructions, setInstructions] = useState<PaymentInstructions>(DEFAULT_PAYMENT_INSTRUCTIONS);
-  const [method, setMethod] = useState<PaymentMethod>("INSTAPAY");
   const [transferReference, setTransferReference] = useState("");
   const [receipt, setReceipt] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -102,20 +91,13 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
     maximumFractionDigits: 2,
   }).format(amount);
   const currency = track.currency || "EGP";
+  const method: PaymentMethod = "VODAFONE_CASH";
   const isAlreadyEnrolled = enrollment?.status === "active" || enrollment?.status === "completed";
 
   if (!track.is_premium || isAlreadyEnrolled) return null;
 
-  const paymentAccount = method === "INSTAPAY"
-    ? instructions.instapay
-    : method === "VODAFONE_CASH"
-      ? instructions.vodafone_cash
-      : instructions.bank_transfer;
-  const transferInstructions = method === "INSTAPAY"
-    ? instructions.instapay_instructions
-    : method === "VODAFONE_CASH"
-      ? instructions.vodafone_cash_instructions
-      : instructions.bank_transfer_instructions;
+  const paymentAccount = instructions.vodafone_cash;
+  const transferInstructions = instructions.vodafone_cash_instructions;
 
   const copyAccount = async () => {
     if (!paymentAccount) return;
@@ -141,7 +123,9 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
     }
 
     setIsSubmitting(true);
+    let whatsappWindow: Window | null = null;
     try {
+      whatsappWindow = window.open("about:blank", "_blank");
       const createdPayment = await paymentService.submitPayment(
         track.id,
         method,
@@ -149,8 +133,17 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
         transferReference,
       );
       setPayment(createdPayment);
+      const targetPhone = "201140225360";
+      const textMessage = `مرحباً Kodraq Digital 🚀\n\nأود تفعيل اشتراكي في مسار: ${track.name}\n\nبيانات الحساب:\n- الاسم: ${user?.full_name || "طالب"}\n- البريد: ${user?.email || ""}\n- وسيلة الدفع: Vodafone Cash\n- رقم/مرجع التحويل: ${transferReference}\n\n(مرفق صورة إيصال التحويل لتفعيل الاشتراك)`;
+      const whatsappUrl = `https://wa.me/${targetPhone}?text=${encodeURIComponent(textMessage)}`;
+      if (whatsappWindow) {
+        whatsappWindow.location.href = whatsappUrl;
+      } else {
+        window.location.assign(whatsappUrl);
+      }
       onSuccess?.();
     } catch (requestError) {
+      whatsappWindow?.close();
       console.error("Payment proof submission failed", requestError);
       setError(getErrorMessage(requestError));
     } finally {
@@ -228,14 +221,9 @@ export default function PaymentCheckout({ track, enrollment, onClose, onSuccess 
 
               <fieldset className="space-y-2">
                 <legend className="text-xs font-bold text-slate-700">وسيلة الدفع</legend>
-                <div className="grid grid-cols-3 gap-2">
-                  {PAYMENT_METHODS.map(({ value, label, icon: Icon }) => (
-                    <label key={value} className={`flex min-h-16 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-center text-xs font-semibold transition focus-within:ring-2 focus-within:ring-sky-500 ${method === value ? "border-sky-600 bg-sky-50 text-sky-900" : "border-slate-200 bg-white text-slate-600 hover:border-slate-400"}`}>
-                      <input className="sr-only" type="radio" name="payment-method" value={value} checked={method === value} onChange={() => setMethod(value)} />
-                      <Icon aria-hidden="true" className="size-4" />
-                      {label}
-                    </label>
-                  ))}
+                <div className="flex min-h-16 items-center gap-3 rounded-lg border border-sky-600 bg-sky-50 px-4 text-sm font-semibold text-sky-900">
+                  <Smartphone aria-hidden="true" className="size-5" />
+                  Vodafone Cash
                 </div>
               </fieldset>
 

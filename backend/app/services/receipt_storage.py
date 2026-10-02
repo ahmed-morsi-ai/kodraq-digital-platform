@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import shutil
+import tempfile
 from pathlib import Path
 from typing import BinaryIO
 from uuid import uuid4
 
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
-RECEIPTS_DIR = BACKEND_ROOT / "uploads" / "receipts"
+RECEIPTS_DIR = Path(tempfile.gettempdir()) / "kodraq-digital-platform" / "uploads" / "receipts"
 
 _CONTENT_TYPE_EXTENSIONS = {
     "image/jpeg": ".jpg",
@@ -54,7 +54,7 @@ def delete_receipt(receipt_path: str) -> None:
     ):
         return
 
-    target = BACKEND_ROOT.joinpath(*relative_path.parts)
+    target = RECEIPTS_DIR / relative_path.name
 
     try:
         target.resolve().relative_to(RECEIPTS_DIR.resolve())

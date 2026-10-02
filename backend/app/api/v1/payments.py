@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -19,6 +20,7 @@ from app.models.user import User as UserModel
 from app.services.receipt_storage import delete_receipt, save_receipt
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 CurrentUserDep = Annotated[
     UserModel,
@@ -30,12 +32,12 @@ CurrentSuperuserDep = Annotated[
 ]
 
 PAYMENT_INSTRUCTIONS = {
-    "vodafone_cash": "01000000000",
+    "vodafone_cash": "01140225360",
     "instapay": "ahmed_morsi2672@instapay",
-    "bank_transfer": "CIB - EG...................",
-    "vodafone_cash_instructions": "قم بالتحويل إلى رقم فودافون كاش أعلاه، ثم أدخل رقم الموبايل المحول منه وأرفق صورة الإيصال.",
-    "instapay_instructions": "قم بالتحويل عبر تطبيق انستاباي إلى العنوان أعلاه، ثم أدخل رقم الهواتف/مرجع التحويل وأرفق صورة الإيصال.",
-    "bank_transfer_instructions": "قم بالتحويل البنكي لحساب الشركة، ثم أرفق إيصال التحويل.",
+    "bank_transfer": "01140225360",
+    "vodafone_cash_instructions": "قم بالتحويل إلى محفظة فودافون كاش رقم 01140225360، ثم أدخل رقم الموبايل المحول منه وأرفق صورة الإيصال.",
+    "instapay_instructions": "تُستقبل التحويلات عبر انستاباي على العنوان ahmed_morsi2672@instapay أو مباشرةً إلى محفظة فودافون كاش رقم 01140225360.",
+    "bank_transfer_instructions": "يرجى التحويل مباشرةً إلى محفظة فودافون كاش رقم 01140225360.",
 }
 
 
@@ -91,10 +93,16 @@ def _create_payment(
                 detail="Payments can only be submitted for premium tracks.",
             )
 
-        receipt_url = save_receipt(
-            file=receipt_file.file,
-            content_type=receipt_file.content_type,
-        )
+        try:
+            receipt_url = save_receipt(
+                file=receipt_file.file,
+                content_type=receipt_file.content_type,
+            )
+        except OSError:
+            logger.exception(
+                "Unable to persist payment receipt; recording payment without local receipt"
+            )
+            receipt_url = "receipt-not-stored"
 
         payment = Payment(
             user_id=current_user.id,

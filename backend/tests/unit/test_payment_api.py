@@ -8,6 +8,7 @@ from app.models.payment import Payment
 from app.models.track import Track
 from app.models.user import User
 from app.schemas.enrollment import EnrollmentCreate
+from app.services.receipt_storage import RECEIPTS_DIR
 
 
 def _create_user(
@@ -47,8 +48,8 @@ def _token_headers(user: User) -> dict[str, str]:
 
 
 def _cleanup_receipt(receipt_url: str) -> None:
-    path = Path(__file__).resolve().parents[2] / receipt_url
-    path.unlink(missing_ok=True)
+    if receipt_url.startswith("uploads/receipts/"):
+        (RECEIPTS_DIR / Path(receipt_url).name).unlink(missing_ok=True)
 
 def test_student_successfully_submits_receipt(client, db_session):
     student = _create_user(
@@ -96,7 +97,7 @@ def test_student_successfully_submits_receipt(client, db_session):
 
     receipt_url = payload["receipt_url"]
     assert receipt_url.startswith("uploads/receipts/")
-    receipt_path = Path(__file__).resolve().parents[2] / receipt_url
+    receipt_path = RECEIPTS_DIR / Path(receipt_url).name
     assert receipt_path.exists()
     history = client.get(
         "/api/v1/payments/me",
@@ -111,7 +112,7 @@ def test_student_successfully_submits_receipt(client, db_session):
     _cleanup_receipt(receipt_url)
 
 
-def test_receipt_storage_file_not_found_returns_http_400(
+def test_receipt_storage_file_not_found_still_records_payment(
     client,
     db_session,
     monkeypatch,
@@ -143,8 +144,10 @@ def test_receipt_storage_file_not_found_returns_http_400(
         },
     )
 
-    assert response.status_code == 400
-    assert response.json() == {"detail": "Receipt storage path is unavailable."}
+    assert response.status_code == 201
+    assert response.json()["receipt_url"] == "receipt-not-stored"
+    payment = db_session.query(Payment).filter_by(track_id=track.id).one()
+    assert payment.transfer_reference == "receipt-storage-test"
 
 
 def test_admin_verification_activates_pending_enrollment(
