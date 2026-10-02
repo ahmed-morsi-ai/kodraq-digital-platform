@@ -159,7 +159,7 @@ export default function Register() {
                   id="full_name"
                   type="text"
                   autoComplete="name"
-                  placeholder="Ahmed Morsi"
+                  placeholder="John Doe"
                   value={fullName}
                   onChange={(event) => setFullName(event.target.value)}
                   required
