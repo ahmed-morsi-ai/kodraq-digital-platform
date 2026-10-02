@@ -31,6 +31,18 @@ YOUTUBE_EMBED_PATTERN = re.compile(
     r"https://www\.youtube\.com/embed/[A-Za-z0-9_-]{11}"
 )
 
+MODULE5_LESSON1_PLACEHOLDER = "سيتم إضافة الشرح المعماري العميق والأكواد هنا قريباً..."
+
+
+def load_module5_lesson1_content(markdown_path: Path | None = None) -> str:
+    content_path = markdown_path or Path(__file__).resolve().with_name("module5_lesson1.md")
+    if content_path.is_file():
+        return content_path.read_text(encoding="utf-8")
+    return MODULE5_LESSON1_PLACEHOLDER
+
+
+MODULE5_LESSON1_CONTENT = load_module5_lesson1_content()
+
 MODULES_DATA = [
     {
         "title": "Module 1: أساسيات الباك إند وبايثون المتقدمة",
@@ -1345,7 +1357,7 @@ sentry_sdk.init(
             {
                 "title": "هندسة التخزين المؤقت باستخدام Redis في FastAPI",
                 "description": "تطبيق Redis للتخزين المؤقت وتحسين زمن استجابة واجهات FastAPI.",
-                "content": "سيتم إضافة الشرح المعماري العميق والأكواد هنا قريباً...",
+                "content": MODULE5_LESSON1_CONTENT,
                 "ordering": 1,
                 "video_url": None,
             },
