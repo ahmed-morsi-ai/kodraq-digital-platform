@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
+import WelcomePromo from "./components/WelcomePromo";
 import RootLayout from "./layouts/RootLayout";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -92,6 +93,7 @@ function App() {
         <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
+      <WelcomePromo />
     </BrowserRouter>
   );
 }

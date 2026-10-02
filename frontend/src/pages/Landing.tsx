@@ -1,7 +1,6 @@
 import { ArrowUpRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import PublicLandingHero from "@/components/public/PublicLandingHero";
-import CinematicIntro from "@/components/public/CinematicIntro";
 
 const services = [
   "Web & Software Development",
@@ -15,8 +14,6 @@ const services = [
 export default function Landing() {
   return (
     <div dir="rtl" className="min-h-screen overflow-x-hidden bg-white text-slate-900">
-      <CinematicIntro />
-
       <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/80 bg-white/95 backdrop-blur-xl">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between gap-6 px-5 sm:px-8">
           <Link to="/" className="flex items-center gap-3">
