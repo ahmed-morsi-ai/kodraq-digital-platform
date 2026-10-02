@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.core.admin_identity import PLATFORM_ADMIN_EMAIL
 from app.core.security import create_access_token
 from app.crud.crud_enrollment import enrollment as crud_enrollment
 from app.models.payment import Payment
@@ -112,6 +113,56 @@ def test_student_successfully_submits_receipt(client, db_session):
     _cleanup_receipt(receipt_url)
 
 
+def test_coupon_is_normalized_and_discounted_on_server(client, db_session):
+    student = _create_user(
+        db_session,
+        email="payment-coupon-student@example.com",
+    )
+    track = _create_premium_track(db_session)
+
+    response = client.post(
+        "/api/v1/payments",
+        headers=_token_headers(student),
+        data={
+            "track_id": str(track.id),
+            "payment_method": "VODAFONE_CASH",
+            "coupon_code": "  SDK-10  ",
+        },
+        files={"file": ("receipt.png", b"receipt", "image/png")},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["amount"] == "135.00"
+    saved_payment = db_session.get(Payment, payload["id"])
+    assert saved_payment is not None
+    assert saved_payment.amount == 135
+    _cleanup_receipt(payload["receipt_url"])
+
+
+def test_invalid_coupon_is_rejected(client, db_session):
+    student = _create_user(
+        db_session,
+        email="payment-invalid-coupon@example.com",
+    )
+    track = _create_premium_track(db_session)
+
+    response = client.post(
+        "/api/v1/payments",
+        headers=_token_headers(student),
+        data={
+            "track_id": str(track.id),
+            "payment_method": "VODAFONE_CASH",
+            "coupon_code": "not-a-coupon",
+        },
+        files={"file": ("receipt.png", b"receipt", "image/png")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid coupon code."
+    assert db_session.query(Payment).filter_by(track_id=track.id).count() == 0
+
+
 def test_receipt_storage_file_not_found_still_records_payment(
     client,
     db_session,
@@ -160,7 +211,7 @@ def test_admin_verification_activates_pending_enrollment(
     )
     admin = _create_user(
         db_session,
-        email="payment-api-admin@example.com",
+        email=PLATFORM_ADMIN_EMAIL,
         is_superuser=True,
     )
     track = _create_premium_track(db_session)
@@ -170,7 +221,7 @@ def test_admin_verification_activates_pending_enrollment(
         user_id=student.id,
         obj_in=EnrollmentCreate(
             track_id=track.id,
-            status="active",
+            status="pending_payment",
         ),
     )
 

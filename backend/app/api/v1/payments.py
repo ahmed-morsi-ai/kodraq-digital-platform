@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -75,6 +75,7 @@ def _create_payment(
     session: SessionDep,
     current_user: CurrentUserDep,
     transfer_reference: str | None = None,
+    coupon_code: str | None = None,
 ) -> Payment:
     receipt_url: str | None = None
     payment_committed = False
@@ -93,6 +94,20 @@ def _create_payment(
                 detail="Payments can only be submitted for premium tracks.",
             )
 
+        base_amount = Decimal(str(track.price)).quantize(Decimal("0.01"))
+        final_amount = base_amount
+        if coupon_code is not None:
+            if coupon_code.strip().lower() != "sdk-10":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid coupon code.",
+                )
+            discount = (base_amount * Decimal("0.10")).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+            final_amount = base_amount - discount
+
         try:
             receipt_url = save_receipt(
                 file=receipt_file.file,
@@ -107,7 +122,7 @@ def _create_payment(
         payment = Payment(
             user_id=current_user.id,
             track_id=track.id,
-            amount=track.price,
+            amount=final_amount,
             currency=track.currency,
             status="PENDING_VERIFICATION",
             payment_method=payment_method,
@@ -144,6 +159,7 @@ def submit_payment(
     session: SessionDep,
     current_user: CurrentUserDep,
     transfer_reference: Annotated[str | None, Form(max_length=255)] = None,
+    coupon_code: Annotated[str | None, Form(max_length=100)] = None,
 ) -> Payment:
     return _create_payment(
         track_id,
@@ -152,6 +168,7 @@ def submit_payment(
         session,
         current_user,
         transfer_reference,
+        coupon_code,
     )
 
 
@@ -163,6 +180,7 @@ def submit_payment_legacy(
     session: SessionDep,
     current_user: CurrentUserDep,
     transfer_reference: Annotated[str | None, Form(max_length=255)] = None,
+    coupon_code: Annotated[str | None, Form(max_length=100)] = None,
 ) -> Payment:
     return _create_payment(
         track_id,
@@ -171,6 +189,7 @@ def submit_payment_legacy(
         session,
         current_user,
         transfer_reference,
+        coupon_code,
     )
 
 
@@ -235,10 +254,11 @@ def verify_payment(
     payment_id: int,
     verification: PaymentVerificationRequest,
     session: SessionDep,
-    current_user: CurrentSuperuserDep,
+    current_user: Annotated[
+        UserModel,
+        Depends(get_current_active_superuser),
+    ],
 ) -> Payment:
-    del current_user
-
     payment = session.get(Payment, payment_id)
 
     if not payment:
