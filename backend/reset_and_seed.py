@@ -1337,18 +1337,60 @@ sentry_sdk.init(
             },
         ],
     },
+    {
+        "title": "Module 5: البنية المتقدمة وتحسين الأداء",
+        "description": "تصميم أنظمة قابلة للتوسع، تحسين الأداء بالتخزين المؤقت، ومعالجة المهام في الخلفية للأنظمة الإنتاجية.",
+        "ordering": 5,
+        "lessons": [
+            {
+                "title": "هندسة التخزين المؤقت باستخدام Redis في FastAPI",
+                "description": "تطبيق Redis للتخزين المؤقت وتحسين زمن استجابة واجهات FastAPI.",
+                "content": "سيتم إضافة الشرح المعماري العميق والأكواد هنا قريباً...",
+                "ordering": 1,
+                "video_url": None,
+            },
+            {
+                "title": "معالجة المهام الثقيلة في الخلفية باستخدام Celery",
+                "description": "تنفيذ المهام الطويلة في الخلفية باستخدام Celery مع الحفاظ على سرعة استجابة التطبيق.",
+                "content": "سيتم إضافة الشرح المعماري العميق والأكواد هنا قريباً...",
+                "ordering": 2,
+                "video_url": None,
+            },
+            {
+                "title": "بناء واجهات اتصال في الوقت الفعلي باستخدام WebSockets",
+                "description": "بناء اتصالات تفاعلية ثنائية الاتجاه باستخدام WebSockets في التطبيقات الإنتاجية.",
+                "content": "سيتم إضافة الشرح المعماري العميق والأكواد هنا قريباً...",
+                "ordering": 3,
+                "video_url": None,
+            },
+            {
+                "title": "بناء نظام صلاحيات متقدم (RBAC) وتأمين الـ APIs",
+                "description": "تصميم صلاحيات قائمة على الأدوار وتأمين واجهات APIs للمستخدمين والموارد.",
+                "content": "سيتم إضافة الشرح المعماري العميق والأكواد هنا قريباً...",
+                "ordering": 4,
+                "video_url": None,
+            },
+            {
+                "title": "أتمتة الاختبارات والنشر المستمر (CI/CD) بـ GitHub Actions",
+                "description": "أتمتة الاختبارات وفحوصات الجودة والنشر المستمر باستخدام GitHub Actions.",
+                "content": "سيتم إضافة الشرح المعماري العميق والأكواد هنا قريباً...",
+                "ordering": 5,
+                "video_url": None,
+            },
+        ],
+    },
 ]
 
 
 def validate_curriculum_data() -> None:
     if TRACK_DATA["slug"] != "backend-ai-engineering" or TRACK_DATA["price"] != 5600.00:
         raise ValueError("Backend & AI track identity or pricing is invalid.")
-    if len(MODULES_DATA) != 4:
-        raise ValueError("Backend & AI curriculum must contain exactly four modules.")
+    if len(MODULES_DATA) != 5:
+        raise ValueError("Backend & AI curriculum must contain exactly five modules.")
 
-    expected_orders = [1, 2, 3, 4]
+    expected_orders = [1, 2, 3, 4, 5]
     if [module["ordering"] for module in MODULES_DATA] != expected_orders:
-        raise ValueError("Modules must be ordered from 1 through 4.")
+        raise ValueError("Modules must be ordered from 1 through 5.")
 
     for module in MODULES_DATA:
         if not module["lessons"]:
@@ -1363,7 +1405,10 @@ def validate_curriculum_data() -> None:
                 raise ValueError(f"Lesson {lesson['title']} needs an Arabic description.")
             if not lesson["content"].strip() or not re.search(r"[\u0600-\u06ff]", lesson["content"]):
                 raise ValueError(f"Lesson {lesson['title']} needs Arabic content.")
-            if not YOUTUBE_EMBED_PATTERN.fullmatch(lesson["video_url"]):
+            if module["ordering"] == 5:
+                if lesson["video_url"] not in (None, ""):
+                    raise ValueError(f"Lesson {lesson['title']} must not have a video URL.")
+            elif not isinstance(lesson["video_url"], str) or not YOUTUBE_EMBED_PATTERN.fullmatch(lesson["video_url"]):
                 raise ValueError(f"Lesson {lesson['title']} needs a YouTube embed URL.")
 
 
@@ -1423,20 +1468,27 @@ def reset_and_seed() -> None:
                         db.add(lesson)
                     for field, value in lesson_data.items():
                         setattr(lesson, field, value)
-                    seeded_lessons.append(lesson)
+                    seeded_lessons.append((lesson, module_data["ordering"]))
 
             db.flush()
             expected_lesson_count = sum(len(module["lessons"]) for module in MODULES_DATA)
             if len(seeded_lessons) != expected_lesson_count:
                 raise RuntimeError("The seeded lesson count does not match the curriculum.")
-            for lesson in seeded_lessons:
+            for lesson, module_order in seeded_lessons:
+                has_valid_video = (
+                    lesson.video_url in (None, "")
+                    if module_order == 5
+                    else bool(
+                        lesson.video_url
+                        and YOUTUBE_EMBED_PATTERN.fullmatch(lesson.video_url)
+                    )
+                )
                 if (
                     not lesson.description
                     or not lesson.description.strip()
                     or not lesson.content
                     or not lesson.content.strip()
-                    or not lesson.video_url
-                    or not YOUTUBE_EMBED_PATTERN.fullmatch(lesson.video_url)
+                    or not has_valid_video
                 ):
                     raise RuntimeError(
                         f"Lesson {lesson.title!r} is missing required curriculum details."
