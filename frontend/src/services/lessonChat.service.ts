@@ -1,5 +1,5 @@
 import { api } from "@/services/api";
-import type { Lesson, LessonQuizQuestion } from "@/types/track";
+import type { Lesson, LessonQuizPrompt } from "@/types/track";
 
 export interface LessonChatMessage {
   role: "user" | "assistant";
@@ -13,12 +13,12 @@ interface AICompletionResponse {
 export interface LessonTranslation {
   title: string;
   content: string;
-  quiz_data: LessonQuizQuestion[];
+  quiz_data: LessonQuizPrompt[];
 }
 
 function parseLessonTranslation(
   content: string,
-  sourceQuiz: LessonQuizQuestion[],
+  sourceQuiz: LessonQuizPrompt[],
 ): LessonTranslation {
   const start = content.indexOf("{");
   const end = content.lastIndexOf("}");
@@ -54,12 +54,18 @@ function parseLessonTranslation(
       || !Array.isArray(question.options)
       || question.options.length !== sourceQuestion.options.length
       || !question.options.every((option) => typeof option === "string")
-      || question.correct_index !== sourceQuestion.correct_index
-      || typeof question.explanation !== "string"
+      || (sourceQuestion.explanation !== undefined && typeof question.explanation !== "string")
     ) {
       throw new Error("Translation response changed the quiz answer structure.");
     }
-    return question as unknown as LessonQuizQuestion;
+    return {
+      id: sourceQuestion.id,
+      question: question.question,
+      options: question.options as string[],
+      ...(sourceQuestion.explanation !== undefined
+        ? { explanation: question.explanation as string }
+        : {}),
+    };
   });
 
   return {
@@ -102,7 +108,7 @@ export const lessonChatService = {
 
   async translateToArabic(
     lesson: Lesson,
-    quizData: LessonQuizQuestion[],
+    quizData: LessonQuizPrompt[],
   ): Promise<LessonTranslation> {
     const response = await api.post<AICompletionResponse>(
       "/api/v1/ai/completions",
@@ -116,7 +122,7 @@ export const lessonChatService = {
               "Return only one valid JSON object with exactly these fields: title, content, quiz_data.",
               "Translate the title, Markdown prose and headings, quiz questions, options, and explanations into Arabic.",
               "Preserve all Markdown structure, tables, code fences, inline code, URLs, HTTP methods, identifiers, JSON field names, and code examples exactly.",
-              "Keep quiz question IDs, option order, and correct_index values unchanged. Do not add, remove, or reorder quiz questions or options.",
+              "Keep quiz question IDs and option order unchanged. Do not add, remove, or reorder quiz questions or options. Do not infer or add answer keys or explanations that are not supplied.",
               "Do not wrap the JSON in Markdown fences or include commentary outside the JSON object.",
             ].join(" "),
           },

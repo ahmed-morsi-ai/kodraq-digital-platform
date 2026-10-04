@@ -634,7 +634,7 @@ export default function TrackDetail() {
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                          {module.resources.map((resource) => (
+                          {module.resources.filter((resource) => resource.file_url).map((resource) => (
                             <a key={resource.id} href={resource.file_url} target="_blank" rel="noreferrer" className="group rounded-xl border border-gray-200 bg-white p-4 transition-all hover:border-emerald-200 hover:bg-emerald-50/30">
                               <div className="flex items-start gap-3">
                                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">

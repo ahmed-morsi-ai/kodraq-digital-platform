@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
+import math
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
+from pydantic import PositiveInt, ValidationError
 from sqlalchemy import select
 
 from app.api.deps import (
@@ -27,7 +31,8 @@ from app.crud.crud_track_assignment_config import (
     track_assignment_config as crud_track_assignment_config,
 )
 from app.models.enrollment import Enrollment
-from app.models.track import Track
+from app.models.track import Lesson as LessonModel
+from app.models.track import Track, TrackModule as TrackModuleModel
 from app.models.track_assignment_config import TrackAssignmentConfig
 from app.models.user import User as UserModel
 from app.schemas.track import (
@@ -37,9 +42,15 @@ from app.schemas.track import (
     ResourceCreate,
     TrackCreate,
     TrackCurriculum,
+    TrackCurriculumPreview,
     TrackModule,
     TrackModuleCreate,
     TrackSummary,
+    LessonQuizQuestion,
+    LessonQuizResult,
+    LessonQuizResultAnswer,
+    LessonQuizSubmission,
+    LessonQuizPrompt,
 )
 from app.schemas.track_assignment_config import (
     TrackAssignmentConfigResponse,
@@ -64,6 +75,19 @@ CurrentAssignmentConfigManagerDep = Annotated[
 ]
 
 
+def _has_curriculum_access(session, current_user: UserModel, track_id: int) -> bool:
+    # Preserve the deployed curriculum entitlement: superuser or active enrollment.
+    if current_user.is_superuser:
+        return True
+    enrollment = session.scalar(
+        select(Enrollment).where(
+            Enrollment.user_id == current_user.id,
+            Enrollment.track_id == track_id,
+        )
+    )
+    return enrollment is not None and enrollment.status == "active"
+
+
 @router.get("", response_model=list[TrackSummary])
 def read_tracks(
     session: SessionDep,
@@ -78,12 +102,15 @@ def read_tracks(
     return list(tracks)
 
 
-@router.get("/{track_id}/curriculum", response_model=TrackCurriculum)
+@router.get(
+    "/{track_id}/curriculum",
+    response_model=TrackCurriculumPreview,
+)
 def read_track_curriculum(
     track_id: int,
     session: SessionDep,
     current_user: CurrentUserDep,
-) -> TrackCurriculum:
+) -> JSONResponse:
     track = crud_track.get_with_curriculum(
         session,
         id=track_id,
@@ -95,43 +122,148 @@ def read_track_curriculum(
             detail="Track not found",
         )
 
-    enrollment = session.scalar(
-        select(Enrollment).where(
-            Enrollment.user_id == current_user.id,
-            Enrollment.track_id == track_id,
+    track_payload = TrackCurriculum.model_validate(track, from_attributes=True)
+    authorized = _has_curriculum_access(session, current_user, track.id)
+
+    preview = TrackCurriculumPreview(
+        name=track_payload.name,
+        slug=track_payload.slug,
+        description=track_payload.description,
+        ordering=track_payload.ordering,
+        is_active=track_payload.is_active,
+        is_premium=track_payload.is_premium,
+        price=track_payload.price,
+        currency=track_payload.currency,
+        id=track_payload.id,
+        modules=[
+            {
+                "id": module.id,
+                "track_id": module.track_id,
+                "title": module.title,
+                "description": module.description,
+                "ordering": module.ordering,
+                "is_active": module.is_active,
+                "lessons": [
+                    {
+                        "id": lesson.id,
+                        "module_id": lesson.module_id,
+                        "title": lesson.title,
+                        "description": lesson.description,
+                        "ordering": lesson.ordering,
+                        **(
+                            {
+                                "content": lesson.content,
+                                "video_url": lesson.video_url,
+                                "quiz_data": [
+                                    LessonQuizPrompt(
+                                        id=question.id,
+                                        question=question.question,
+                                        options=question.options,
+                                    )
+                                    for question in lesson.quiz_data or []
+                                ],
+                            }
+                            if authorized
+                            else {}
+                        ),
+                    }
+                    for lesson in module.lessons
+                ],
+                "resources": [
+                    {
+                        "id": resource.id,
+                        "module_id": resource.module_id,
+                        "title": resource.title,
+                        "resource_type": resource.resource_type,
+                        **({"file_url": resource.file_url} if authorized else {}),
+                    }
+                    for resource in module.resources
+                ],
+            }
+            for module in track_payload.modules
+        ],
+    )
+    return JSONResponse(content=preview.model_dump(mode="json", exclude_unset=True))
+
+
+@router.post(
+    "/{track_id}/lessons/{lesson_id}/quiz/submit",
+    response_model=LessonQuizResult,
+)
+def submit_lesson_quiz(
+    track_id: PositiveInt,
+    lesson_id: PositiveInt,
+    submission: LessonQuizSubmission,
+    session: SessionDep,
+    current_user: CurrentUserDep,
+) -> LessonQuizResult:
+    lesson = session.scalar(
+        select(LessonModel)
+        .join(TrackModuleModel, LessonModel.module_id == TrackModuleModel.id)
+        .join(Track, TrackModuleModel.track_id == Track.id)
+        .where(
+            LessonModel.id == lesson_id,
+            TrackModuleModel.track_id == track_id,
+            Track.is_active.is_(True),
         )
     )
+    if lesson is None:
+        raise HTTPException(status_code=404, detail="Lesson not found.")
+    if not _has_curriculum_access(session, current_user, track_id):
+        raise HTTPException(status_code=403, detail="An active enrollment is required.")
 
-    track_payload = TrackCurriculum.model_validate(track, from_attributes=True)
+    raw_questions = lesson.quiz_data
+    if isinstance(raw_questions, str):
+        try:
+            raw_questions = json.loads(raw_questions)
+        except json.JSONDecodeError:
+            raw_questions = None
+    try:
+        questions = [
+            LessonQuizQuestion.model_validate(item)
+            for item in raw_questions or []
+        ]
+    except (TypeError, ValidationError):
+        questions = []
+    if not questions:
+        raise HTTPException(status_code=404, detail="Lesson quiz not found.")
 
-    if not current_user.is_superuser and (
-        enrollment is None or enrollment.status != "active"
-    ):
-        track_payload = track_payload.model_copy(
-            update={
-                "modules": [
-                    module.model_copy(
-                        update={
-                            "lessons": [
-                                lesson.model_copy(
-                                    update={
-                                        "content": (
-                                            "هذا المحتوى مقفل. "
-                                            "يرجى الاشتراك في المسار "
-                                            "لتتمكن من عرض تفاصيل الدرس."
-                                        )
-                                    }
-                                )
-                                for lesson in module.lessons
-                            ]
-                        }
-                    )
-                    for module in track_payload.modules
-                ]
-            }
+    answer_by_id = {answer.question_id: answer for answer in submission.answers}
+    question_ids = {question.id for question in questions}
+    if set(answer_by_id) != question_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="Submit exactly one answer for each lesson quiz question.",
         )
 
-    return track_payload
+    results = []
+    score = 0
+    for question in questions:
+        answer = answer_by_id[question.id]
+        if answer.selected_index >= len(question.options):
+            raise HTTPException(
+                status_code=422,
+                detail="A selected option is invalid for this question.",
+            )
+        correct = answer.selected_index == question.correct_index
+        score += int(correct)
+        results.append(
+            LessonQuizResultAnswer(
+                question_id=question.id,
+                selected_index=answer.selected_index,
+                correct_index=question.correct_index,
+                is_correct=correct,
+                explanation=question.explanation,
+            )
+        )
+
+    total = len(questions)
+    return LessonQuizResult(
+        score=score,
+        total=total,
+        percentage=math.floor(score * 100 / total + 0.5),
+        answers=results,
+    )
 
 
 @router.get(

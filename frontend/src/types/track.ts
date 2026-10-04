@@ -2,7 +2,7 @@ export interface Resource {
   id: number;
   module_id: number;
   title: string;
-  file_url: string;
+  file_url?: string;
   resource_type: string;
 }
 
@@ -20,15 +20,35 @@ export interface LessonQuizQuestion {
   explanation: string;
 }
 
+export interface LessonQuizPrompt {
+  id: number;
+  question: string;
+  options: string[];
+  explanation?: string;
+}
+
+export interface LessonQuizResult {
+  score: number;
+  total: number;
+  percentage: number;
+  answers: {
+    question_id: number;
+    selected_index: number;
+    correct_index: number;
+    is_correct: boolean;
+    explanation: string;
+  }[];
+}
+
 export interface Lesson {
   id: number;
   module_id: number;
   title: string;
   description: string | null;
-  content: string | null;
-  video_url: string | null;
+  content?: string | null;
+  video_url?: string | null;
   ordering: number;
-  quiz_data: LessonQuizQuestion[] | string | null;
+  quiz_data?: LessonQuizQuestion[] | LessonQuizPrompt[] | string | null;
 }
 
 export interface LessonCreate {

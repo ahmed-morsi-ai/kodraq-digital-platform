@@ -1,8 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, field_validator
 
 
 class ResourceBase(BaseModel):
@@ -40,6 +40,48 @@ class LessonQuizQuestion(BaseModel):
     options: list[str]
     correct_index: int
     explanation: str
+
+
+class LessonQuizPrompt(BaseModel):
+    id: int
+    question: str
+    options: list[str]
+
+
+class LessonQuizAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question_id: PositiveInt
+    selected_index: int = Field(ge=0)
+
+
+class LessonQuizSubmission(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    answers: list[LessonQuizAnswer] = Field(min_length=1, max_length=100)
+
+    @field_validator("answers")
+    @classmethod
+    def unique_question_answers(cls, answers: list[LessonQuizAnswer]):
+        question_ids = [answer.question_id for answer in answers]
+        if len(question_ids) != len(set(question_ids)):
+            raise ValueError("Each quiz question must have one answer.")
+        return answers
+
+
+class LessonQuizResultAnswer(BaseModel):
+    question_id: int
+    selected_index: int
+    correct_index: int
+    is_correct: bool
+    explanation: str
+
+
+class LessonQuizResult(BaseModel):
+    score: int
+    total: int
+    percentage: int
+    answers: list[LessonQuizResultAnswer]
 
 
 class Lesson(LessonBase):
@@ -109,3 +151,38 @@ class TrackCurriculum(TrackBase):
     
     class Config:
         from_attributes = True
+
+
+class CurriculumResource(BaseModel):
+    id: int
+    module_id: int
+    title: str
+    file_url: str | None = None
+    resource_type: str
+
+
+class CurriculumLesson(BaseModel):
+    id: int
+    module_id: int
+    title: str
+    description: str | None = None
+    content: str | None = None
+    video_url: str | None = None
+    ordering: int
+    quiz_data: list[LessonQuizPrompt] | None = None
+
+
+class CurriculumModule(BaseModel):
+    id: int
+    track_id: int
+    title: str
+    description: str | None = None
+    ordering: int
+    is_active: bool
+    lessons: list[CurriculumLesson] = Field(default_factory=list)
+    resources: list[CurriculumResource] = Field(default_factory=list)
+
+
+class TrackCurriculumPreview(TrackBase):
+    id: int
+    modules: list[CurriculumModule] = Field(default_factory=list)

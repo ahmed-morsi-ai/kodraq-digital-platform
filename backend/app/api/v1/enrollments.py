@@ -19,7 +19,7 @@ from app.crud.crud_enrollment import (
     student_progress as crud_student_progress,
 )
 from app.crud.crud_track import track as crud_track
-from app.models.enrollment import Enrollment
+from app.models.enrollment import Enrollment, StudentProgress as StudentProgressModel
 from app.models.payment import Payment
 from app.models.track import Lesson, Track
 from app.models.user import User as UserModel
@@ -32,6 +32,7 @@ from app.schemas.enrollment import (
     StudentProgressDetail,
     StudentProgressUpdate,
 )
+from app.schemas.track import CurriculumLesson, LessonQuizPrompt
 
 router = APIRouter()
 
@@ -57,16 +58,77 @@ def _require_enrollment_access(
         )
 
 
+def _progress_response(
+    progress: StudentProgressModel,
+    enrollment: Enrollment,
+    current_user: UserModel,
+) -> StudentProgressDetail:
+    lesson = progress.lesson
+    lesson_payload = None
+    if lesson is not None:
+        entitled = current_user.is_superuser or (
+            enrollment.user_id == current_user.id and enrollment.status == "active"
+        )
+        lesson_payload = CurriculumLesson(
+            id=lesson.id,
+            module_id=lesson.module_id,
+            title=lesson.title,
+            description=lesson.description,
+            ordering=lesson.ordering,
+            **(
+                {
+                    "content": lesson.content,
+                    "video_url": lesson.video_url,
+                    "quiz_data": (
+                        [
+                            LessonQuizPrompt.model_validate(question)
+                            for question in lesson.quiz_data
+                        ]
+                        if lesson.quiz_data is not None
+                        else None
+                    ),
+                }
+                if entitled
+                else {}
+            ),
+        )
+    progress_payload = StudentProgress.model_validate(progress, from_attributes=True)
+    return StudentProgressDetail(
+        **progress_payload.model_dump(),
+        lesson=lesson_payload,
+    )
+
+
+def _enrollment_response(
+    enrollment: Enrollment,
+    current_user: UserModel,
+) -> EnrollmentDetail:
+    return EnrollmentDetail(
+        id=enrollment.id,
+        user_id=enrollment.user_id,
+        track_id=enrollment.track_id,
+        status=enrollment.status,
+        enrolled_at=enrollment.enrolled_at,
+        completed_at=enrollment.completed_at,
+        track=enrollment.track,
+        progress=[
+            _progress_response(progress, enrollment, current_user)
+            for progress in enrollment.progress
+        ],
+    )
+
+
 @router.post(
     "",
     response_model=EnrollmentDetail,
+    response_model_exclude_unset=True,
     status_code=status.HTTP_201_CREATED,
 )
 def create_enrollment(
     session: SessionDep,
     enrollment_in: EnrollmentCreate,
     current_user: CurrentUserDep,
-) -> Enrollment:
+) -> EnrollmentDetail:
     track = session.get(Track, enrollment_in.track_id)
     if track is None:
         raise HTTPException(
@@ -124,21 +186,25 @@ def create_enrollment(
             detail="Enrollment was created but could not be loaded.",
         )
 
-    return detail
+    return _enrollment_response(detail, current_user)
 
 
-@router.get("/me", response_model=list[EnrollmentDetail])
+@router.get(
+    "/me",
+    response_model=list[EnrollmentDetail],
+    response_model_exclude_unset=True,
+)
 def read_my_enrollments(
     session: SessionDep,
     current_user: CurrentUserDep,
-) -> list[Enrollment]:
+) -> list[EnrollmentDetail]:
     enrollments = crud_enrollment.get_multi_by_user(
         session,
         user_id=current_user.id,
     )
 
     return [
-        detail
+        _enrollment_response(detail, current_user)
         for enrollment_item in enrollments
         if (
             detail := crud_enrollment.get_detail(
@@ -152,14 +218,13 @@ def read_my_enrollments(
 @router.get(
     "/track/{track_id}",
     response_model=list[EnrollmentDetail],
+    response_model_exclude_unset=True,
 )
 def read_track_enrollments(
     track_id: int,
     session: SessionDep,
     current_user: CurrentSuperuserDep,
-) -> list[Enrollment]:
-    del current_user
-
+) -> list[EnrollmentDetail]:
     track = crud_track.get(
         session,
         id=track_id,
@@ -177,7 +242,7 @@ def read_track_enrollments(
     )
 
     return [
-        detail
+        _enrollment_response(detail, current_user)
         for enrollment_item in enrollments
         if (
             detail := crud_enrollment.get_detail(
@@ -191,12 +256,13 @@ def read_track_enrollments(
 @router.get(
     "/{enrollment_id}",
     response_model=EnrollmentDetail,
+    response_model_exclude_unset=True,
 )
 def read_enrollment(
     enrollment_id: int,
     session: SessionDep,
     current_user: CurrentUserDep,
-) -> Enrollment:
+) -> EnrollmentDetail:
     enrollment = crud_enrollment.get_detail(
         session,
         id=enrollment_id,
@@ -213,21 +279,20 @@ def read_enrollment(
         current_user,
     )
 
-    return enrollment
+    return _enrollment_response(enrollment, current_user)
 
 
 @router.patch(
     "/{enrollment_id}",
     response_model=EnrollmentDetail,
+    response_model_exclude_unset=True,
 )
 def update_enrollment(
     enrollment_id: int,
     session: SessionDep,
     enrollment_in: EnrollmentUpdate,
     current_user: CurrentSuperuserDep,
-) -> Enrollment:
-    del current_user
-
+) -> EnrollmentDetail:
     enrollment = crud_enrollment.get(
         session,
         id=enrollment_id,
@@ -278,18 +343,19 @@ def update_enrollment(
             detail="Enrollment was updated but could not be loaded.",
         )
 
-    return detail
+    return _enrollment_response(detail, current_user)
 
 
 @router.get(
     "/{enrollment_id}/progress",
     response_model=list[StudentProgressDetail],
+    response_model_exclude_unset=True,
 )
 def read_enrollment_progress(
     enrollment_id: int,
     session: SessionDep,
     current_user: CurrentUserDep,
-) -> list[StudentProgress]:
+) -> list[StudentProgressDetail]:
     enrollment = crud_enrollment.get(
         session,
         id=enrollment_id,
@@ -306,17 +372,19 @@ def read_enrollment_progress(
         current_user,
     )
 
-    return list(
-        crud_student_progress.get_multi_by_enrollment(
+    return [
+        _progress_response(progress, enrollment, current_user)
+        for progress in crud_student_progress.get_multi_by_enrollment(
             session,
             enrollment_id=enrollment_id,
         )
-    )
+    ]
 
 
 @router.post(
     "/{enrollment_id}/progress",
     response_model=StudentProgressDetail,
+    response_model_exclude_unset=True,
     status_code=status.HTTP_201_CREATED,
 )
 def create_progress(
@@ -324,7 +392,7 @@ def create_progress(
     session: SessionDep,
     progress_in: StudentProgressCreate,
     current_user: CurrentUserDep,
-) -> StudentProgress:
+) -> StudentProgressDetail:
     enrollment = crud_enrollment.get(
         session,
         id=enrollment_id,
@@ -393,12 +461,13 @@ def create_progress(
             detail="Progress was created but could not be loaded.",
         )
 
-    return detail
+    return _progress_response(detail, enrollment, current_user)
 
 
 @router.patch(
     "/{enrollment_id}/progress/{progress_id}",
     response_model=StudentProgressDetail,
+    response_model_exclude_unset=True,
 )
 def update_progress(
     enrollment_id: int,
@@ -406,7 +475,7 @@ def update_progress(
     session: SessionDep,
     progress_in: StudentProgressUpdate,
     current_user: CurrentUserDep,
-) -> StudentProgress:
+) -> StudentProgressDetail:
     enrollment = crud_enrollment.get(
         session,
         id=enrollment_id,
@@ -451,4 +520,4 @@ def update_progress(
             detail="Progress was updated but could not be loaded.",
         )
 
-    return detail
+    return _progress_response(detail, enrollment, current_user)

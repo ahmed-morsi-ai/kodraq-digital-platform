@@ -63,7 +63,10 @@ function getErrorMessage(error: unknown): string {
 }
 
 function quizFromLesson(lesson: Lesson): LessonQuizQuestion[] {
-  if (Array.isArray(lesson.quiz_data)) return lesson.quiz_data;
+  if (Array.isArray(lesson.quiz_data)) return [...lesson.quiz_data].filter(
+    (question): question is LessonQuizQuestion => "correct_index" in question
+      && typeof question.correct_index === "number" && typeof question.explanation === "string",
+  );
   if (typeof lesson.quiz_data === "string") {
     try {
       const parsed: unknown = JSON.parse(lesson.quiz_data);
@@ -321,8 +324,8 @@ export default function AdvancedAdminDashboard() {
       setLessonDraft({
         title: selectedLesson.title,
         description: selectedLesson.description,
-        content: selectedLesson.content,
-        video_url: selectedLesson.video_url,
+        content: selectedLesson.content ?? null,
+        video_url: selectedLesson.video_url ?? null,
         ordering: selectedLesson.ordering,
         quiz_data: quizFromLesson(selectedLesson),
       });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isAxiosError } from "axios";
 import { ArrowLeft, Languages, Loader2, Send, Sparkles, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -13,9 +13,9 @@ import { useAuth } from "@/context/AuthContext";
 import { getEmbedUrl } from "@/lib/youtube";
 import { enrollmentService } from "@/services/enrollment.service";
 import { lessonChatService } from "@/services/lessonChat.service";
-import { trackService } from "@/services/track.service";
+import { parseLessonQuiz, trackService } from "@/services/track.service";
 import type { Enrollment } from "@/types/enrollment";
-import type { Lesson, LessonQuizQuestion, TrackCurriculum } from "@/types/track";
+import type { Lesson, LessonQuizPrompt, LessonQuizResult, TrackCurriculum } from "@/types/track";
 import type {
   LessonChatMessage,
   LessonTranslation,
@@ -55,39 +55,6 @@ function getTranslationError(error: unknown): string {
   return "Arabic translation is unavailable right now. Please try again.";
 }
 
-function isLessonQuizQuestion(value: unknown): value is LessonQuizQuestion {
-  if (!value || typeof value !== "object") return false;
-  const question = value as Partial<LessonQuizQuestion>;
-  return typeof question.id === "number"
-    && typeof question.question === "string"
-    && Array.isArray(question.options)
-    && question.options.length > 0
-    && question.options.every((option) => typeof option === "string")
-    && typeof question.correct_index === "number"
-    && Number.isInteger(question.correct_index)
-    && question.correct_index >= 0
-    && question.correct_index < question.options.length
-    && typeof question.explanation === "string";
-}
-
-function parseLessonQuiz(
-  rawQuiz: Lesson["quiz_data"] | undefined,
-): LessonQuizQuestion[] {
-  let parsedQuiz: unknown = rawQuiz;
-  if (typeof rawQuiz === "string") {
-    try {
-      parsedQuiz = JSON.parse(rawQuiz);
-    } catch (parseError) {
-      console.error("Unable to parse lesson quiz data", parseError);
-      return [];
-    }
-  }
-
-  return Array.isArray(parsedQuiz)
-    ? parsedQuiz.filter(isLessonQuizQuestion)
-    : [];
-}
-
 export default function LessonView() {
   const { trackId: trackIdParam, lessonId: lessonIdParam } = useParams();
   const { user } = useAuth();
@@ -111,6 +78,10 @@ export default function LessonView() {
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [quizResult, setQuizResult] = useState<LessonQuizResult | null>(null);
+  const [quizError, setQuizError] = useState<string | null>(null);
+  const [isSubmittingQuiz, setIsSubmittingQuiz] = useState(false);
+  const quizRequest = useRef<object | null>(null);
 
   const enrollment = enrollments.find((item) => item.track_id === trackId);
   const hasAccess = Boolean(
@@ -127,15 +98,8 @@ export default function LessonView() {
   const displayContent = isArabic && translatedLesson
     ? translatedLesson.content
     : lesson?.content ?? "";
-  const quizScore = displayQuizList.reduce(
-    (score, quizQuestion) => score + (
-      selectedAnswers[quizQuestion.id] === quizQuestion.correct_index ? 1 : 0
-    ),
-    0,
-  );
-  const quizPercentage = displayQuizList.length
-    ? Math.round((quizScore / displayQuizList.length) * 100)
-    : 0;
+  const quizScore = quizResult?.score ?? 0;
+  const quizPercentage = quizResult?.percentage ?? 0;
   const allQuestionsAnswered = displayQuizList.length > 0
     && displayQuizList.every((quizQuestion) => selectedAnswers[quizQuestion.id] !== undefined);
 
@@ -146,10 +110,15 @@ export default function LessonView() {
   useEffect(() => {
     setSelectedAnswers({});
     setQuizSubmitted(false);
+    setQuizResult(null);
+    setQuizError(null);
+    setIsSubmittingQuiz(false);
+    quizRequest.current = null;
     setIsArabic(false);
     setTranslatedLesson(null);
     setTranslationError(null);
-  }, [lessonId]);
+    return () => { quizRequest.current = null; };
+  }, [lessonId, trackId]);
 
   useEffect(() => {
     let active = true;
@@ -231,6 +200,7 @@ export default function LessonView() {
   const toggleArabic = async () => {
     if (isArabic) {
       setIsArabic(false);
+      if (quizResult) setTranslatedLesson(null);
       return;
     }
     if (translatedLesson) {
@@ -242,7 +212,10 @@ export default function LessonView() {
     setIsTranslating(true);
     setTranslationError(null);
     try {
-      const translation = await lessonChatService.translateToArabic(lesson, quizList);
+      const translation = await lessonChatService.translateToArabic(lesson, quizList.map((item) => {
+        const answer = quizResult?.answers.find((result) => result.question_id === item.id);
+        return answer ? { ...item, explanation: answer.explanation } : item;
+      }));
       setTranslatedLesson(translation);
       setIsArabic(true);
     } catch (requestError) {
@@ -252,7 +225,8 @@ export default function LessonView() {
     }
   };
 
-  const selectQuizAnswer = (quizQuestion: LessonQuizQuestion, optionIndex: number) => {
+  const selectQuizAnswer = (quizQuestion: LessonQuizPrompt, optionIndex: number) => {
+    if (quizSubmitted || quizRequest.current) return;
     setSelectedAnswers((currentAnswers) => ({
       ...currentAnswers,
       [quizQuestion.id]: optionIndex,
@@ -260,8 +234,46 @@ export default function LessonView() {
   };
 
   const resetQuiz = () => {
+    if (quizRequest.current) return;
     setSelectedAnswers({});
     setQuizSubmitted(false);
+    setQuizResult(null);
+    setQuizError(null);
+    // A cached translation may contain explanations from the previous attempt.
+    setTranslatedLesson((current) => current ? {
+      ...current,
+      quiz_data: current.quiz_data.map(({ id, question, options }) => ({ id, question, options })),
+    } : null);
+  };
+
+  const submitLessonQuiz = async () => {
+    if (!lesson || !hasAccess || !allQuestionsAnswered || quizSubmitted || quizRequest.current) return;
+    const request = {};
+    quizRequest.current = request;
+    setIsSubmittingQuiz(true);
+    setQuizError(null);
+    try {
+      const result = await trackService.submitLessonQuiz(
+        trackId,
+        lesson.id,
+        quizList.map((item) => ({
+          question_id: item.id,
+          selected_index: selectedAnswers[item.id],
+        })),
+      );
+      if (quizRequest.current !== request) return;
+      setQuizResult(result);
+      setQuizSubmitted(true);
+      // Refresh on the next Arabic toggle so submitted explanations can be translated.
+      if (!isArabic) setTranslatedLesson(null);
+    } catch (requestError) {
+      if (quizRequest.current === request) setQuizError(getRequestError(requestError));
+    } finally {
+      if (quizRequest.current === request) {
+        quizRequest.current = null;
+        setIsSubmittingQuiz(false);
+      }
+    }
   };
 
   if (!hasValidRoute) {
@@ -453,7 +465,9 @@ export default function LessonView() {
 
                 <div dir={isArabic ? "rtl" : "ltr"} className={`mt-6 space-y-5 ${isArabic ? "text-right" : "text-left"}`}>
                   <div className="space-y-4">
-                  {displayQuizList.map((quizQuestion, questionIndex) => (
+                  {displayQuizList.map((quizQuestion, questionIndex) => {
+                    const result = quizResult?.answers.find((answer) => answer.question_id === quizQuestion.id);
+                    return (
                     <fieldset key={quizQuestion.id} className="min-w-0 rounded-md border border-slate-200 p-4">
                       <legend className="max-w-full px-1 font-semibold leading-6 text-slate-900">
                         {questionIndex + 1}. {quizQuestion.question}
@@ -461,10 +475,10 @@ export default function LessonView() {
                       <div className="mt-2 space-y-2">
                         {quizQuestion.options.map((option, optionIndex) => {
                           const isCorrect = quizSubmitted
-                            && optionIndex === quizQuestion.correct_index;
-                          const isChosenWrong = quizSubmitted
-                            && selectedAnswers[quizQuestion.id] === optionIndex
-                            && optionIndex !== quizQuestion.correct_index;
+                            && optionIndex === result?.correct_index;
+                          const isChosenWrong = Boolean(quizSubmitted
+                            && result?.selected_index === optionIndex
+                            && !result?.is_correct);
                           const optionStyle = isCorrect
                             ? "border-emerald-300 bg-emerald-50 text-emerald-950"
                             : isChosenWrong
@@ -482,7 +496,7 @@ export default function LessonView() {
                                 value={optionIndex}
                                 checked={selectedAnswers[quizQuestion.id] === optionIndex}
                                 onChange={() => selectQuizAnswer(quizQuestion, optionIndex)}
-                                disabled={quizSubmitted}
+                                disabled={quizSubmitted || isSubmittingQuiz}
                                 className="mt-1 size-4 shrink-0 accent-sky-700"
                               />
                               <span className="min-w-0 flex-1">{option}</span>
@@ -492,14 +506,15 @@ export default function LessonView() {
                           );
                         })}
                       </div>
-                      {quizSubmitted && (
+                      {quizSubmitted && result && (
                         <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm leading-6 text-sky-950">
                           <p className="font-semibold">{isArabic ? "التفسير" : "Explanation"}</p>
-                          <p className="mt-1">{quizQuestion.explanation}</p>
+                          <p className="mt-1">{quizQuestion.explanation ?? result.explanation}</p>
                         </div>
                       )}
                     </fieldset>
-                  ))}
+                  );
+                  })}
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3">
@@ -507,10 +522,10 @@ export default function LessonView() {
                       <>
                         <Button
                           type="button"
-                          onClick={() => setQuizSubmitted(true)}
-                          disabled={!allQuestionsAnswered}
+                          onClick={() => void submitLessonQuiz()}
+                          disabled={!allQuestionsAnswered || isSubmittingQuiz}
                         >
-                          {isArabic ? "تسليم الإجابات" : "Submit Answers"}
+                          {isSubmittingQuiz ? "Submitting..." : isArabic ? "تسليم الإجابات" : "Submit Answers"}
                         </Button>
                         {!allQuestionsAnswered && (
                           <p className="text-sm text-slate-500">
@@ -524,6 +539,7 @@ export default function LessonView() {
                       </Button>
                     )}
                   </div>
+                  {quizError && <p role="alert" className="text-sm text-rose-700">{quizError}</p>}
                 </div>
               </section>
             )}

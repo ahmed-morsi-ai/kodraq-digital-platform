@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.track import Lesson, TrackSummary
+from app.schemas.track import CurriculumLesson, TrackSummary
 
 
 class StudentProgressBase(BaseModel):
@@ -41,7 +41,7 @@ class StudentProgress(StudentProgressBase):
 
 
 class StudentProgressDetail(StudentProgress):
-    lesson: Lesson | None = None
+    lesson: CurriculumLesson | None = None
 
 
 class EnrollmentBase(BaseModel):
